@@ -66,6 +66,13 @@ export function resolveEmbeddedCompactionTarget(params: {
   harnessRuntime?: string | null;
   defaultProvider?: string;
   defaultModel?: string;
+  /**
+   * Skip the configured `compaction.model` override. Set by the model-fallback
+   * wrapper's per-attempt calls so fallback candidates (model.fallbacks) rotate
+   * as intended instead of every attempt collapsing back to the explicit
+   * override (which caused fallback attempts to retry the same model).
+   */
+  ignoreConfiguredOverride?: boolean;
 }): {
   provider: string | undefined;
   runtimeProvider?: string;
@@ -76,7 +83,9 @@ export function resolveEmbeddedCompactionTarget(params: {
 } {
   const provider = params.provider?.trim() || params.defaultProvider;
   const model = params.modelId?.trim() || params.defaultModel;
-  const override = params.config?.agents?.defaults?.compaction?.model?.trim();
+  const override = params.ignoreConfiguredOverride
+    ? undefined
+    : params.config?.agents?.defaults?.compaction?.model?.trim();
   const resolveTargetProviders = (
     targetProvider: string | undefined,
     authProfileId: string | undefined,

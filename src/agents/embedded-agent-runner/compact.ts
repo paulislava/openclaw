@@ -535,6 +535,11 @@ export async function compactEmbeddedAgentSessionDirect(
           provider,
           model,
           authProfileId,
+          // Each fallback attempt already carries the resolved provider/model
+          // for this candidate; skip re-applying compaction.model so the
+          // fallback loop can rotate through model.fallbacks instead of every
+          // attempt collapsing back to the explicit override.
+          bypassConfiguredCompactionModel: true,
         });
       },
     });
@@ -588,6 +593,7 @@ async function compactEmbeddedAgentSessionDirectOnce(
     authProfileId: params.authProfileId,
     defaultProvider: DEFAULT_PROVIDER,
     defaultModel: DEFAULT_MODEL,
+    ignoreConfiguredOverride: params.bypassConfiguredCompactionModel,
   });
   const configuredHarnessPolicy = resolveAgentHarnessPolicy({
     provider: policyCompactionTarget.provider ?? DEFAULT_PROVIDER,
@@ -611,6 +617,7 @@ async function compactEmbeddedAgentSessionDirectOnce(
     harnessRuntime: selectedHarnessRuntime,
     defaultProvider: DEFAULT_PROVIDER,
     defaultModel: DEFAULT_MODEL,
+    ignoreConfiguredOverride: params.bypassConfiguredCompactionModel,
   });
   // Keep the configured provider for harness policy, while auth/model loading below can
   // route OpenAI compaction through Codex OAuth when that runtime owns the session credentials.
