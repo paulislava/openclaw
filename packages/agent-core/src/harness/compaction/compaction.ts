@@ -514,6 +514,35 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
+/** Assembled summarization prompt: the shared system prompt plus the user turn text. */
+export interface CompactionSummaryPrompt {
+  systemPrompt: string;
+  promptText: string;
+}
+
+/**
+ * Builds the summarization prompt (system + user text) from conversation messages.
+ * Shared by `generateSummary` and out-of-process summarizers (e.g. CLI-runtime
+ * compaction) so the prompt text lives in exactly one place.
+ */
+export function buildCompactionSummaryPrompt(
+  currentMessages: AgentMessage[],
+  opts?: { customInstructions?: string; previousSummary?: string },
+): CompactionSummaryPrompt {
+  let basePrompt = opts?.previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
+  if (opts?.customInstructions) {
+    basePrompt = `${basePrompt}\n\nAdditional focus: ${opts.customInstructions}`;
+  }
+  const llmMessages = convertToLlm(currentMessages);
+  const conversationText = serializeConversation(llmMessages);
+  let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
+  if (opts?.previousSummary) {
+    promptText += `<previous-summary>\n${opts.previousSummary}\n</previous-summary>\n\n`;
+  }
+  promptText += basePrompt;
+  return { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, promptText };
+}
+
 function createSummarizationOptions(
   model: Model,
   maxTokens: number,
@@ -563,17 +592,10 @@ export async function generateSummary(
     Math.floor(0.8 * reserveTokens),
     model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
   );
-  let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
-  if (customInstructions) {
-    basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
-  }
-  const llmMessages = convertToLlm(currentMessages);
-  const conversationText = serializeConversation(llmMessages);
-  let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
-  if (previousSummary) {
-    promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
-  }
-  promptText += basePrompt;
+  const { systemPrompt, promptText } = buildCompactionSummaryPrompt(currentMessages, {
+    ...(customInstructions ? { customInstructions } : {}),
+    ...(previousSummary ? { previousSummary } : {}),
+  });
 
   const summarizationMessages = [
     {
@@ -585,7 +607,7 @@ export async function generateSummary(
 
   const response = await completeSummarization(
     model,
-    { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+    { systemPrompt, messages: summarizationMessages },
     createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel),
     streamFn,
     runtime,
