@@ -33,7 +33,10 @@ import {
   createTestRegistry,
 } from "../../test-utils/channel-plugins.js";
 import { createInternalHookEventPayload } from "../../test-utils/internal-hook-event-payload.js";
-import { getReplyPayloadMetadata } from "../reply-payload.js";
+import {
+  getReplyPayloadMetadata,
+  markReplyPayloadAsResponseUsageFooter,
+} from "../reply-payload.js";
 import type { MsgContext } from "../templating.js";
 import { setReplyPayloadMetadata, type GetReplyOptions, type ReplyPayload } from "../types.js";
 import { markCommandSessionMetadataChanged } from "./command-session-metadata.js";
@@ -10385,6 +10388,34 @@ describe("sendPolicy deny — suppress delivery, not processing (#53328)", () =>
     expect(result.queuedFinal).toBe(false);
     expect(result.sourceReplyDeliveryMode).toBe("message_tool_only");
     expect(dispatcher.sendFinalReply).not.toHaveBeenCalled();
+  });
+
+  it("delivers response-usage footers after message-tool-only room-event replies", async () => {
+    setNoAbort();
+    const dispatcher = createDispatcher();
+    const usageFooter = markReplyPayloadAsResponseUsageFooter({
+      text: "Usage: 12 in / 3 out",
+    });
+    const replyResolver = vi.fn(async (_ctx: MsgContext, opts?: GetReplyOptions) => {
+      expect(opts?.sourceReplyDeliveryMode).toBe("message_tool_only");
+      return usageFooter satisfies ReplyPayload;
+    });
+
+    const result = await dispatchReplyFromConfig({
+      ctx: buildTestCtx({
+        ChatType: "channel",
+        InboundEventKind: "room_event",
+        SessionKey: "test:discord:channel:C1",
+      }),
+      cfg: emptyConfig,
+      dispatcher,
+      replyResolver,
+    });
+
+    expect(replyResolver).toHaveBeenCalledTimes(1);
+    expect(result.queuedFinal).toBe(true);
+    expect(result.sourceReplyDeliveryMode).toBe("message_tool_only");
+    expect(dispatcher.sendFinalReply).toHaveBeenCalledWith(usageFooter);
   });
 
   it("delivers internal WebChat room-event final replies automatically", async () => {

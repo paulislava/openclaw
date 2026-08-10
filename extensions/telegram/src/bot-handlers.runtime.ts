@@ -300,6 +300,13 @@ export const registerTelegramHandlers = ({
     dispatchDedupeKeys: string[];
     spooledReplayParticipant?: TelegramSpooledReplayDeferredParticipant;
   };
+  type PendingForwardCommentEntry = {
+    entry: TelegramDebounceEntry;
+    timer: ReturnType<typeof setTimeout>;
+  };
+  const pendingForwardComments = new Map<string, PendingForwardCommentEntry>();
+  const activeForwardBurstTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const activeForwardBurstLastMessageIds = new Map<string, number>();
   const resolveTelegramDebounceEntryMs = (entry: TelegramDebounceEntry): number =>
     entry.debounceLane === "forward" ? FORWARD_BURST_DEBOUNCE_MS : debounceMs;
   const shouldDebounceTelegramEntry = (entry: TelegramDebounceEntry): boolean => {
@@ -318,6 +325,68 @@ export const registerTelegramHandlers = ({
       return false;
     }
     return entry.allMedia.length === 0;
+  };
+  const hasTelegramForwardMetadata = (msg: Message): boolean => {
+    const forwardMeta = msg as {
+      forward_origin?: unknown;
+      forward_from?: unknown;
+      forward_from_chat?: unknown;
+      forward_sender_name?: unknown;
+      forward_date?: unknown;
+    };
+    return Boolean(
+      forwardMeta.forward_origin ??
+        forwardMeta.forward_from ??
+        forwardMeta.forward_from_chat ??
+        forwardMeta.forward_sender_name ??
+        forwardMeta.forward_date,
+    );
+  };
+  const hasTelegramForwardedReplyTarget = (msg: Message): boolean => {
+    const externalReply = (msg as Message & { external_reply?: Message }).external_reply;
+    const replyTarget = msg.reply_to_message ?? externalReply;
+    return Boolean(replyTarget && hasTelegramForwardMetadata(replyTarget));
+  };
+  const shouldHoldPossibleForwardComment = (entry: TelegramDebounceEntry): boolean => {
+    if (entry.debounceLane !== "default" || !entry.debounceKey || entry.allMedia.length > 0) {
+      return false;
+    }
+    const text = getTelegramTextParts(entry.msg).text;
+    return shouldDebounceTextInbound({
+      text,
+      cfg,
+      commandOptions: { botUsername: entry.botUsername },
+    });
+  };
+  const markActiveForwardBurst = (key: string, messageId: number) => {
+    const previousTimer = activeForwardBurstTimers.get(key);
+    if (previousTimer) {
+      clearTimeout(previousTimer);
+    }
+    activeForwardBurstLastMessageIds.set(key, messageId);
+    const timer = setTimeout(() => {
+      activeForwardBurstTimers.delete(key);
+      activeForwardBurstLastMessageIds.delete(key);
+    }, FORWARD_BURST_DEBOUNCE_MS);
+    timer.unref?.();
+    activeForwardBurstTimers.set(key, timer);
+  };
+  const isAdjacentToActiveForwardBurst = (key: string, messageId: number): boolean => {
+    const lastMessageId = activeForwardBurstLastMessageIds.get(key);
+    return (
+      typeof lastMessageId === "number" &&
+      messageId > lastMessageId &&
+      messageId - lastMessageId <= 1
+    );
+  };
+  const clearPendingForwardComment = (key: string): PendingForwardCommentEntry | undefined => {
+    const pending = pendingForwardComments.get(key);
+    if (!pending) {
+      return undefined;
+    }
+    pendingForwardComments.delete(key);
+    clearTimeout(pending.timer);
+    return pending;
   };
   const normalizePromptContextMinTimestampMs = (timestampMs?: number) =>
     typeof timestampMs === "number" && Number.isFinite(timestampMs) ? timestampMs : undefined;
@@ -397,18 +466,7 @@ export const registerTelegramHandlers = ({
     return { process: true, keys: claim.kind === "claimed" ? [claim.key] : [] };
   };
   const resolveTelegramDebounceLane = (msg: Message): TelegramDebounceLane => {
-    const forwardMeta = msg as {
-      forward_origin?: unknown;
-      forward_from?: unknown;
-      forward_from_chat?: unknown;
-      forward_sender_name?: unknown;
-      forward_date?: unknown;
-    };
-    return (forwardMeta.forward_origin ??
-      forwardMeta.forward_from ??
-      forwardMeta.forward_from_chat ??
-      forwardMeta.forward_sender_name ??
-      forwardMeta.forward_date)
+    return hasTelegramForwardMetadata(msg) || hasTelegramForwardedReplyTarget(msg)
       ? "forward"
       : "default";
   };

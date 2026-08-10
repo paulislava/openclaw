@@ -55,6 +55,7 @@ const RETRY_BACKOFF_MULTIPLIER = 2;
 const UNRESUMABLE_SESSION_NOTICE =
   "I was interrupted by a gateway restart and couldn't safely resume the previous turn. " +
   "Please send that last request again and I'll pick it up cleanly.";
+const TELEGRAM_CHANNEL_ID = "telegram";
 
 function shouldSkipMainRecovery(entry: SessionEntry, sessionKey: string): boolean {
   if (typeof entry.spawnDepth === "number" && entry.spawnDepth > 0) {
@@ -77,6 +78,46 @@ function normalizeStringSet(values: Iterable<string> | undefined): Set<string> {
     }
   }
   return normalized;
+}
+
+function parsePositiveInteger(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function normalizeTelegramRecoveryThreadId(value: unknown): number | undefined {
+  const direct = parsePositiveInteger(value);
+  if (direct != null) {
+    return direct;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parts = value
+    .split(":")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parsePositiveInteger(parts.at(-1));
+}
+
+function normalizeRestartRecoveryDeliveryContextForChannel(
+  context: DeliveryContext,
+): DeliveryContext {
+  if (context.channel !== TELEGRAM_CHANNEL_ID || context.threadId == null) {
+    return context;
+  }
+  const threadId = normalizeTelegramRecoveryThreadId(context.threadId);
+  return threadId == null ? context : { ...context, threadId };
 }
 
 function normalizeFiniteTimestamp(value: unknown): number | undefined {
@@ -554,7 +595,7 @@ function resolveRestartRecoveryDeliveryContext(params: {
     return undefined;
   }
   return {
-    ...deliveryContext,
+    ...normalizeRestartRecoveryDeliveryContextForChannel(deliveryContext),
     channel,
     to,
   };

@@ -284,7 +284,11 @@ export function hydrateSessionStoreSkillPromptRefs(params: {
       changed = true;
       continue;
     }
-    const { promptRef: _promptRef, ...rest } = snapshot as typeof snapshot & {
+    const {
+      prompt: _snapshotPrompt,
+      promptRef: _promptRef,
+      ...rest
+    } = snapshot as typeof snapshot & {
       promptRef?: SessionSkillPromptRef;
     };
     // Put prompt first so the key order matches the original in-memory entry.

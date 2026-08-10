@@ -40,7 +40,7 @@ export const telegramChannelConfigUiHints = {
   },
   includeGroupHistoryContext: {
     label: "Telegram Group History Context",
-    help: 'Controls prior Telegram group messages included in model context: "mention-only" keeps messages addressed to the bot and bot replies (default), "recent" includes recent room history, and "none" disables group history context.',
+    help: 'Controls prior Telegram group messages included in model context: "recent" includes recent room history since the previous bot reply (default), "mention-only" keeps messages addressed to the bot and bot replies, and "none" disables group history context.',
   },
   "commands.native": {
     label: "Telegram Native Commands",

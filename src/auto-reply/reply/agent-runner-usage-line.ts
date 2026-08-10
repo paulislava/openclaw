@@ -8,7 +8,11 @@ import {
   type ModelCostConfig,
   resolveModelCostConfig,
 } from "../../utils/usage-format.js";
-import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-payload.js";
+import {
+  getReplyPayloadMetadata,
+  markReplyPayloadAsResponseUsageFooter,
+  setReplyPayloadMetadata,
+} from "../reply-payload.js";
 import { resolveEffectiveResponseUsage } from "../thinking.js";
 import type { ReplyPayload } from "../types.js";
 import { buildUsageContract } from "../usage-bar/contract.js";
@@ -77,9 +81,24 @@ export const resolveResponseUsageLine = (params: {
   );
   if (
     responseUsageMode === "off" ||
-    !hasNonzeroUsage(params.usage) ||
     params.preserveUserFacingSessionState === true
   ) {
+    return undefined;
+  }
+
+  const usageTemplate =
+    responseUsageMode === "full" && params.replyUsageState
+      ? loadUsageBarTemplate(params.config.messages?.usageTemplate)
+      : undefined;
+  const rendered =
+    usageTemplate && params.replyUsageState
+      ? renderUsageBar(usageTemplate, buildUsageContract(params.replyUsageState, params.channel))
+      : undefined;
+
+  if (rendered) {
+    return rendered;
+  }
+  if (!hasNonzeroUsage(params.usage)) {
     return undefined;
   }
 
@@ -95,18 +114,6 @@ export const resolveResponseUsageLine = (params: {
     showCost,
     costConfig,
   });
-  const usageTemplate =
-    responseUsageMode === "full" && params.replyUsageState
-      ? loadUsageBarTemplate(params.config.messages?.usageTemplate)
-      : undefined;
-  const rendered =
-    usageTemplate && params.replyUsageState
-      ? renderUsageBar(usageTemplate, buildUsageContract(params.replyUsageState, params.channel))
-      : undefined;
-
-  if (rendered) {
-    return rendered;
-  }
   return formatted ?? undefined;
 };
 
@@ -143,6 +150,50 @@ export const appendUsageLine = (payloads: ReplyPayload[], line: string): ReplyPa
           : {}),
       })
     : next;
+  const updated = payloads.slice();
+  updated[index] = nextWithMetadata;
+  return updated;
+};
+
+/**
+ * Appends response usage to a payload that will actually be delivered. A
+ * message-tool-only source reply may already have been sent through the
+ * message tool; its final payload is only a transcript mirror, so mutating it
+ * would hide the usage line behind duplicate-source-reply suppression.
+ */
+export const appendUsageLineForDelivery = (
+  payloads: ReplyPayload[],
+  line: string,
+): ReplyPayload[] => {
+  if (!payloads.some((payload) => getReplyPayloadMetadata(payload)?.sourceReplyTranscriptMirror)) {
+    return appendUsageLine(payloads, line);
+  }
+
+  let index = -1;
+  for (let i = payloads.length - 1; i >= 0; i -= 1) {
+    const metadata = getReplyPayloadMetadata(payloads[i]);
+    if (
+      payloads[i]?.text &&
+      !metadata?.sourceReplyTranscriptMirror &&
+      metadata?.deliverDespiteSourceReplySuppression === true
+    ) {
+      index = i;
+      break;
+    }
+  }
+  if (index === -1) {
+    return [...payloads, markReplyPayloadAsResponseUsageFooter({ text: line })];
+  }
+
+  const existing = payloads[index];
+  const existingText = existing.text ?? "";
+  const separator = existingText.endsWith("\n") ? "" : "\n";
+  const next = {
+    ...existing,
+    text: `${existingText}${separator}${line}`,
+  };
+  const metadata = getReplyPayloadMetadata(existing);
+  const nextWithMetadata = metadata ? setReplyPayloadMetadata(next, metadata) : next;
   const updated = payloads.slice();
   updated[index] = nextWithMetadata;
   return updated;

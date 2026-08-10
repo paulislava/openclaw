@@ -3498,7 +3498,9 @@ export async function dispatchReplyFromConfig(
       suppressAutomaticSourceDelivery &&
       !sendPolicyDenied &&
       getReplyPayloadMetadata(reply)?.deliverDespiteSourceReplySuppression === true &&
-      (ctx.InboundEventKind !== "room_event" || explicitCommandTurnCtx);
+      (ctx.InboundEventKind !== "room_event" ||
+        explicitCommandTurnCtx ||
+        getReplyPayloadMetadata(reply)?.responseUsageFooter === true);
     for (const [replyIndex, reply] of replies.entries()) {
       throwIfDispatchOperationAborted();
       // Durable reasoning is a channel-owned lane; generic channels keep the

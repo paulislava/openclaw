@@ -657,4 +657,55 @@ describe("telegram forwarded bursts", () => {
     },
     FORWARD_BURST_TEST_TIMEOUT_MS,
   );
+
+  it(
+    "coalesces forwarded text plus a reply comment into a single processing turn",
+    async () => {
+      const runtimeError = vi.fn();
+      const { handler, replySpy } = await createBotHandlerWithOptions({ runtimeError });
+
+      await handler({
+        message: {
+          chat: { id: 42, type: "private" },
+          from: { id: 777, is_bot: false, first_name: "N" },
+          message_id: 31,
+          text: "Forwarded body",
+          date: 1736380800,
+          forward_origin: { type: "hidden_user", date: 1736380700, sender_user_name: "A" },
+        },
+        me: { username: "openclaw_bot" },
+        getFile: async () => ({}),
+      });
+
+      await handler({
+        message: {
+          chat: { id: 42, type: "private" },
+          from: { id: 777, is_bot: false, first_name: "N" },
+          message_id: 32,
+          text: "My comment",
+          date: 1736380801,
+          reply_to_message: {
+            chat: { id: 42, type: "private" },
+            from: { id: 777, is_bot: false, first_name: "N" },
+            message_id: 31,
+            text: "Forwarded body",
+            date: 1736380800,
+            forward_origin: { type: "hidden_user", date: 1736380700, sender_user_name: "A" },
+          },
+        },
+        me: { username: "openclaw_bot" },
+        getFile: async () => ({}),
+      });
+
+      await vi.waitFor(() => {
+        expect(replySpy).toHaveBeenCalledTimes(1);
+      });
+
+      expect(runtimeError).not.toHaveBeenCalled();
+      const payload = replyPayload(replySpy);
+      expect(payload.Body).toContain("Forwarded body");
+      expect(payload.Body).toContain("My comment");
+    },
+    FORWARD_BURST_TEST_TIMEOUT_MS,
+  );
 });

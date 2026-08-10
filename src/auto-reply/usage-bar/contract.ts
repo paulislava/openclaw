@@ -1,6 +1,37 @@
 import type { PluginHookReplyUsageState } from "../../plugins/hook-types.js";
 import type { UsageContract } from "./translator.js";
 
+function formatResetRemaining(targetMs?: number): string | undefined {
+  if (!targetMs) {
+    return undefined;
+  }
+  const diffMs = targetMs - Date.now();
+  if (diffMs <= 0) {
+    return " ⏱now";
+  }
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) {
+    return ` ⏱${mins}m`;
+  }
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours < 24) {
+    return ` ⏱${hours}h${remMins > 0 ? `${String(remMins).padStart(2, "0")}m` : ""}`;
+  }
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return ` ⏱${days}d${remHours > 0 ? `${remHours}h` : ""}`;
+}
+
+function currentDirLabel(cwd?: string): string | undefined {
+  const trimmed = cwd?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const normalized = trimmed.replace(/\/+$/, "");
+  return normalized.split("/").filter(Boolean).pop() ?? normalized;
+}
+
 export function buildUsageContract(
   state: PluginHookReplyUsageState,
   surface?: string,
@@ -11,10 +42,12 @@ export function buildUsageContract(
   const cacheRead = usage.cacheRead;
   const cacheWrite = usage.cacheWrite;
   const total = usage.total;
-  const hasSplitTokens = input !== undefined || output !== undefined;
-  const hasTotalOnlyTokens = !hasSplitTokens && total !== undefined;
-  const hasTokens =
-    hasSplitTokens || cacheRead !== undefined || cacheWrite !== undefined || total !== undefined;
+  const hasPositiveSplitTokens = (input ?? 0) > 0 || (output ?? 0) > 0;
+  const hasPositiveCacheTokens = (cacheRead ?? 0) > 0 || (cacheWrite ?? 0) > 0;
+  const hasPositiveTotalTokens = (total ?? 0) > 0;
+  const hasSplitTokens = hasPositiveSplitTokens;
+  const hasTotalOnlyTokens = !hasSplitTokens && hasPositiveTotalTokens;
+  const hasTokens = hasSplitTokens || hasPositiveCacheTokens || hasPositiveTotalTokens;
 
   const promptTotal = (cacheRead ?? 0) + (cacheWrite ?? 0) + (input ?? 0);
   const cacheHitPct =
@@ -38,6 +71,8 @@ export function buildUsageContract(
         : undefined;
   const pctUsed =
     maxTokens && usedTokens !== undefined ? Math.round((usedTokens / maxTokens) * 100) : undefined;
+  const remainingTokens =
+    maxTokens && usedTokens !== undefined ? Math.max(0, maxTokens - usedTokens) : undefined;
 
   const overrideSource = state.overrideSource ?? null;
   const isOverride =
@@ -90,8 +125,18 @@ export function buildUsageContract(
     },
     context: {
       used_tokens: usedTokens,
+      remaining_tokens: remainingTokens,
       max_tokens: maxTokens,
       pct_used: pctUsed,
+    },
+    limits: {
+      windows: state.providerUsageWindows?.map((window) => ({
+        label: window.label,
+        used_pct: window.usedPercent,
+        remaining_pct: Math.max(0, Math.min(100, 100 - window.usedPercent)),
+        reset_at: window.resetAt,
+        reset_label: formatResetRemaining(window.resetAt),
+      })),
     },
     cost: {
       turn_usd: typeof state.turnUsd === "number" ? state.turnUsd : null,
@@ -104,6 +149,10 @@ export function buildUsageContract(
       name: state.identity?.name ?? null,
       emoji: state.identity?.emoji ?? null,
       avatar: state.identity?.avatar ?? null,
+    },
+    workspace: {
+      cwd: state.cwd ?? null,
+      current_dir: currentDirLabel(state.cwd) ?? null,
     },
     session: { id: state.sessionId ?? null },
   };

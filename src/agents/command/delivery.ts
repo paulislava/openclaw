@@ -7,6 +7,10 @@ import {
 } from "../../agents/agent-scope-config.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
+import {
+  appendUsageLineForDelivery,
+  resolveResponseUsageLine,
+} from "../../auto-reply/reply/agent-runner-usage-line.js";
 import { normalizeReplyPayload } from "../../auto-reply/reply/normalize-reply.js";
 import { createReplyMediaPathNormalizer } from "../../auto-reply/reply/reply-media-paths.runtime.js";
 import { sendDurableMessageBatch } from "../../channels/message/runtime.js";
@@ -658,11 +662,23 @@ export async function deliverAgentCommandResult(
     }
   }
 
+  const resultMeta = mergeResultMetaOverrides(result.meta, opts.resultMetaOverrides);
+  const responseUsageLine = resolveResponseUsageLine({
+    config: cfg,
+    sessionRaw: sessionEntry?.responseUsage,
+    channel: deliveryChannel,
+    usage: resultMeta.agentMeta?.usage,
+    provider: resultMeta.agentMeta?.provider,
+    model: resultMeta.agentMeta?.model,
+  });
+  const replyPayloadsWithUsage = responseUsageLine
+    ? appendUsageLineForDelivery(payloads as ReplyPayload[], responseUsageLine)
+    : payloads;
   const normalizedReplyPayloads = normalizeAgentCommandReplyPayloads({
     cfg,
     opts,
     outboundSession,
-    payloads,
+    payloads: replyPayloadsWithUsage,
     result,
     deliveryChannel,
     accountId: resolvedAccountId,
@@ -687,7 +703,6 @@ export async function deliverAgentCommandResult(
   params.assertDeliveryCurrent?.();
   const outboundPayloadPlan = createOutboundPayloadPlan(mediaNormalizedReplyPayloads);
   const normalizedPayloads = projectOutboundPayloadPlanForJson(outboundPayloadPlan);
-  const resultMeta = mergeResultMetaOverrides(result.meta, opts.resultMetaOverrides);
   const emitJsonEnvelope = (status?: AgentCommandDeliveryStatus) => {
     if (!opts.json) {
       return;

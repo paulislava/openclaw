@@ -45,13 +45,16 @@ export function resolveUsageProviderId(
   }
   const normalized = normalizeProviderId(provider);
   if (
-    normalized === "openai" &&
+    (normalized === "openai" || normalized === "codex") &&
     (options?.credentialType === "oauth" || options?.credentialType === "token")
   ) {
     return "openai";
   }
-  if (normalized === "openai") {
+  if (normalized === "openai" || normalized === "codex") {
     return undefined;
+  }
+  if (normalized === "claude-cli") {
+    return "anthropic";
   }
   if (
     normalized === "minimax-portal" ||

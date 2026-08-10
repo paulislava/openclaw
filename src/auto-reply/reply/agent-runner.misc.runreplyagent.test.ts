@@ -2692,6 +2692,7 @@ describe("runReplyAgent response usage footer", () => {
     config?: unknown;
     provider?: string;
     model?: string;
+    sourceReplyDeliveryMode?: "message_tool_only";
   }) {
     const typing = createMockTypingController();
     const sessionCtx = {
@@ -2757,6 +2758,9 @@ describe("runReplyAgent response usage footer", () => {
       resolvedBlockStreamingBreak: "message_end",
       shouldInjectGroupIntro: false,
       typingMode: "instant",
+      opts: params.sourceReplyDeliveryMode
+        ? { sourceReplyDeliveryMode: params.sourceReplyDeliveryMode }
+        : undefined,
     });
   }
 
@@ -2781,6 +2785,35 @@ describe("runReplyAgent response usage footer", () => {
     expect(text).toContain("🗄 22%");
     expect(text).not.toContain("Usage:");
     expect(text).not.toContain("· session ");
+  });
+
+  it("returns a usage footer when a message-tool-only reply already delivered the source reply", async () => {
+    runEmbeddedAgentMock.mockResolvedValueOnce({
+      payloads: [],
+      messagingToolSentTexts: ["already sent"],
+      messagingToolSentTargets: [
+        { tool: "message", provider: "whatsapp", to: "+15550001111", text: "already sent" },
+      ],
+      meta: {
+        agentMeta: {
+          provider: "anthropic",
+          model: "claude",
+          usage: { input: 12, output: 3, cacheRead: 4, cacheWrite: 2 },
+        },
+      },
+    });
+
+    const res = await createRun({
+      responseUsage: "full",
+      sessionKey: "agent:main:whatsapp:dm:+15550001111",
+      sourceReplyDeliveryMode: "message_tool_only",
+    });
+    const payload = Array.isArray(res) ? res[0] : res;
+    const text = payload?.text ?? "";
+
+    expect(text).toContain("anthropic🤖 claude 🌘 🐌");
+    expect(text).toContain("↕️ 12/3");
+    expect(text).not.toContain("already sent");
   });
 
   it("does not append session key when responseUsage=tokens", async () => {

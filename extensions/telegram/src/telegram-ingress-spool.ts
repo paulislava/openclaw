@@ -373,6 +373,22 @@ export async function failTelegramSpooledUpdateClaim(params: {
   return failed;
 }
 
+export async function failTelegramSpooledUpdate(params: {
+  update: TelegramSpooledUpdate;
+  reason: string;
+  message: string;
+  now?: number;
+}): Promise<boolean> {
+  const queue = createTelegramIngressQueue(path.dirname(params.update.path));
+  const failed = await queue.fail(queueMutationTarget(params.update), {
+    reason: params.reason,
+    message: params.message,
+    ...(params.now === undefined ? {} : { failedAt: params.now }),
+  });
+  await pruneTelegramIngressQueue(queue, params.now);
+  return failed;
+}
+
 export async function listTelegramSpooledUpdateClaims(params: {
   spoolDir: string;
 }): Promise<ClaimedTelegramSpooledUpdate[]> {
