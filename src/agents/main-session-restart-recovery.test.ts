@@ -823,6 +823,42 @@ describe("main-session-restart-recovery", () => {
     });
   });
 
+  it("normalizes composite Telegram restart recovery thread ids before delivery", async () => {
+    const sessionsDir = await makeSessionsDir();
+    await writeStore(sessionsDir, {
+      "agent:developer:telegram:direct:318445470:thread:318445470:466116": {
+        sessionId: "main-session",
+        updatedAt: Date.now() - 10_000,
+        status: "running",
+        abortedLastRun: true,
+        restartRecoveryDeliveryContext: {
+          channel: "telegram",
+          to: "telegram:318445470",
+          accountId: "developer",
+          threadId: "318445470:466116",
+        },
+      },
+    });
+    await writeTranscript(sessionsDir, "main-session", [
+      { role: "user", content: "run the tool" },
+      { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "exec" }] },
+      { role: "toolResult", content: "done" },
+    ]);
+
+    const result = await recoverRestartAbortedMainSessions({ stateDir: tmpDir });
+
+    expect(result).toEqual({ recovered: 1, failed: 0, skipped: 0 });
+    expect(firstGatewayParams()).toMatchObject({
+      sessionKey: "agent:developer:telegram:direct:318445470:thread:318445470:466116",
+      deliver: true,
+      bestEffortDeliver: true,
+      channel: "telegram",
+      to: "telegram:318445470",
+      accountId: "developer",
+      threadId: "466116",
+    });
+  });
+
   it("does not infer restart delivery from historical session routes", async () => {
     const sessionsDir = await makeSessionsDir();
     await writeStore(sessionsDir, {

@@ -279,6 +279,51 @@ describe("normalizeAgentCommandReplyPayloads", () => {
     expect(deliverOutboundPayloadsMock).not.toHaveBeenCalled();
   });
 
+  it("appends response usage to delivered agent command payloads", async () => {
+    deliverOutboundPayloadsMock.mockResolvedValue([{ channel: "slack", messageId: "msg-1" }]);
+
+    await deliverAgentCommandResult({
+      cfg: {
+        agents: {
+          list: [{ id: "tester", workspace: "/tmp/agent-workspace" }],
+        },
+      } as OpenClawConfig,
+      deps: {} as CliDeps,
+      runtime: { log: vi.fn(), error: vi.fn() } as never,
+      opts: {
+        message: "go",
+        deliver: true,
+        replyChannel: "slack",
+        replyTo: "#general",
+      } as AgentCommandOpts,
+      outboundSession: {
+        key: "agent:tester:slack:direct:alice",
+        agentId: "tester",
+      } as never,
+      sessionEntry: {
+        sessionId: "session",
+        updatedAt: Date.now(),
+        responseUsage: "full",
+      },
+      payloads: [{ text: "done" }],
+      result: createResult({
+        meta: {
+          agentMeta: {
+            provider: "openai",
+            model: "gpt-5.5",
+            usage: { input: 12, output: 3, cacheRead: 4, cacheWrite: 2 },
+          },
+        },
+      }),
+    });
+
+    const deliverArgs = latestOutboundDeliveryArgs();
+    expect(deliverArgs.payloads[0]?.text).toContain("done");
+    expect(deliverArgs.payloads[0]?.text).toContain("Usage:");
+    expect(deliverArgs.payloads[0]?.text).toContain("12 in / 3 out");
+    expect(deliverArgs.payloads[0]?.text).toContain("cache 4 cached / 2 new");
+  });
+
   it("forwards the run abort signal into durable delivery", async () => {
     const controller = new AbortController();
     controller.abort(createAgentRunRestartAbortError());

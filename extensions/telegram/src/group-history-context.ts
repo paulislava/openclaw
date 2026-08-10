@@ -6,7 +6,7 @@ export type TelegramGroupHistoryContextMode = NonNullable<
 >;
 
 export const DEFAULT_TELEGRAM_GROUP_HISTORY_CONTEXT_MODE: TelegramGroupHistoryContextMode =
-  "mention-only";
+  "recent";
 
 export function resolveTelegramGroupHistoryContextMode(
   config?: Pick<TelegramAccountConfig, "includeGroupHistoryContext">,

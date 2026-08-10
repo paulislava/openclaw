@@ -548,6 +548,8 @@ export type PluginHookReplyUsageState = {
   turnUsd?: number;
   /** Wall-clock duration of the turn in milliseconds. */
   durationMs?: number;
+  /** Task working directory used by the runtime for this turn. */
+  cwd?: string;
   /** Owning agent's configured identity (name/emoji/avatar), when set. */
   identity?: { name?: string; emoji?: string; avatar?: string };
   compactionCount?: number;
@@ -562,6 +564,12 @@ export type PluginHookReplyUsageState = {
    * back to the aggregate prompt total, which is correct for single-call turns).
    */
   contextUsedTokens?: number;
+  /** Provider quota windows available at reply time, e.g. Codex 5h/Week limits. */
+  providerUsageWindows?: Array<{
+    label: string;
+    usedPercent: number;
+    resetAt?: number;
+  }>;
   usage?: {
     input?: number;
     output?: number;

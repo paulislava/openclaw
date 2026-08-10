@@ -187,6 +187,80 @@ describe("cli credentials", () => {
     expect(execSyncMock).toHaveBeenCalledTimes(1);
   });
 
+  it("prefers the current-user keychain entry over a stale duplicate", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-claude-dup-"));
+    vi.setSystemTime(new Date("2025-01-01T00:00:00Z"));
+    const username = os.userInfo().username;
+    execSyncMock.mockImplementation((command: unknown) => {
+      const cmd = String(command);
+      if (cmd.includes(`-a "${username}"`)) {
+        return JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "fresh-token",
+            refreshToken: "fresh-refresh",
+            expiresAt: Date.now() + 60_000,
+          },
+        });
+      }
+      // Unscoped read returns a stale duplicate entry (e.g. written as root).
+      return JSON.stringify({
+        claudeAiOauth: {
+          accessToken: "stale-token",
+          refreshToken: "stale-refresh",
+          expiresAt: Date.now() - 60_000,
+        },
+      });
+    });
+
+    const creds = readClaudeCliCredentialsCached({
+      allowKeychainPrompt: true,
+      ttlMs: CLI_CREDENTIALS_CACHE_TTL_MS,
+      platform: "darwin",
+      homeDir: tempDir,
+      execSync: execSyncMock,
+    });
+
+    expectFields(creds, { type: "oauth", provider: "anthropic", access: "fresh-token" });
+    // The fresh current-user entry short-circuits without a second keychain read.
+    expect(execSyncMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to a fresher duplicate when the current-user entry is expired", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-claude-dup-"));
+    vi.setSystemTime(new Date("2025-01-01T00:00:00Z"));
+    const username = os.userInfo().username;
+    execSyncMock.mockImplementation((command: unknown) => {
+      const cmd = String(command);
+      if (cmd.includes(`-a "${username}"`)) {
+        return JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "expired-token",
+            refreshToken: "expired-refresh",
+            expiresAt: Date.now() - 60_000,
+          },
+        });
+      }
+      return JSON.stringify({
+        claudeAiOauth: {
+          accessToken: "fresh-token",
+          refreshToken: "fresh-refresh",
+          expiresAt: Date.now() + 60_000,
+        },
+      });
+    });
+
+    const creds = readClaudeCliCredentialsCached({
+      allowKeychainPrompt: true,
+      ttlMs: CLI_CREDENTIALS_CACHE_TTL_MS,
+      platform: "darwin",
+      homeDir: tempDir,
+      execSync: execSyncMock,
+    });
+
+    expectFields(creds, { type: "oauth", provider: "anthropic", access: "fresh-token" });
+    expect(execSyncMock).toHaveBeenCalledTimes(2);
+  });
+
   it("reads Codex credentials from keychain when available", () => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-codex-"));
     process.env.CODEX_HOME = tempHome;

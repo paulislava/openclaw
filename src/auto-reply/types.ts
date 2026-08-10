@@ -9,6 +9,7 @@ export type {
 export {
   copyReplyPayloadMetadata,
   markCommandReplyForDelivery,
+  markReplyPayloadAsResponseUsageFooter,
   markReplyPayloadForSourceSuppressionDelivery,
   setReplyPayloadMetadata,
 } from "./reply-payload.js";

@@ -30,9 +30,16 @@ export const DEFAULT_USAGE_BAR_TEMPLATE: UsageBarTemplate = {
       { map: "model.is_override", cases: { true: " 📌" } },
       { when: "model.reasoning", text: " {model.reasoning|alias:reasoning}" },
       { map: "state.fast_mode", cases: { true: " ⚡", false: " 🐌" } },
+      { when: "workspace.current_dir", text: " 📂{workspace.current_dir}" },
+      {
+        each: "limits.windows",
+        item: "{label} {remaining_pct|pct}{reset_label}",
+        text: " | ⏳",
+        join: " · ",
+      },
       {
         when: "context.max_tokens",
-        text: " | 📚 [{context.pct_used|meter:5:braille}]{context.max_tokens|num}",
+        text: " | 📚 [{context.pct_used|meter:5:braille}] used {context.used_tokens|num|?} / left {context.remaining_tokens|num|?} / win {context.max_tokens|num}",
       },
       {
         when: "usage.has_split_tokens",
@@ -50,9 +57,16 @@ export const DEFAULT_USAGE_BAR_TEMPLATE: UsageBarTemplate = {
         { map: "model.is_override", cases: { true: "📌" } },
         { when: "model.reasoning", text: " {model.reasoning|alias:reasoning}" },
         { map: "state.fast_mode", cases: { true: " ⚡️", false: " 🐌" } },
+        { when: "workspace.current_dir", text: " 📂{workspace.current_dir}" },
+        {
+          each: "limits.windows",
+          item: "{label} {remaining_pct|pct}{reset_label}",
+          text: " | ⏳",
+          join: " · ",
+        },
         {
           when: "context.max_tokens",
-          text: " | 📚 [{context.pct_used|meter:5:braille}]{context.max_tokens|num}",
+          text: " | 📚 [{context.pct_used|meter:5:braille}] used {context.used_tokens|num|?} / left {context.remaining_tokens|num|?} / win {context.max_tokens|num}",
         },
         {
           when: "usage.has_split_tokens",

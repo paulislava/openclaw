@@ -59,6 +59,7 @@ import {
 import { DEFAULT_HEARTBEAT_ACK_MAX_CHARS, stripHeartbeatToken } from "../heartbeat.js";
 import {
   isReplyPayloadStatusNotice,
+  markReplyPayloadAsResponseUsageFooter,
   markReplyPayloadForSourceSuppressionDelivery,
   setReplyPayloadMetadata,
 } from "../reply-payload.js";
@@ -84,7 +85,10 @@ import {
   hasUnbackedReminderCommitment,
 } from "./agent-runner-reminder-guard.js";
 import { resetReplyRunSession } from "./agent-runner-session-reset.js";
-import { appendUsageLine, resolveResponseUsageLine } from "./agent-runner-usage-line.js";
+import {
+  appendUsageLineForDelivery,
+  resolveResponseUsageLine,
+} from "./agent-runner-usage-line.js";
 import { resolveQueuedReplyExecutionConfig } from "./agent-runner-utils.js";
 import { createAudioAsVoiceBuffer, createBlockReplyPipeline } from "./block-reply-pipeline.js";
 import { resolveEffectiveBlockStreamingConfig } from "./block-streaming.js";
@@ -121,7 +125,11 @@ import {
 } from "./reply-run-registry.js";
 import { createReplyToModeFilterForChannel, resolveReplyToMode } from "./reply-threading.js";
 import { admitReplyTurn, resolveReplyTurnKind } from "./reply-turn-admission.js";
-import { buildReplyUsageState, recordReplyUsageState } from "./reply-usage-state.js";
+import {
+  buildReplyUsageState,
+  recordReplyUsageState,
+  resolveReplyProviderUsageWindows,
+} from "./reply-usage-state.js";
 import { resolveRoutedDeliveryThreadId } from "./routed-delivery-thread.js";
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
 import { resolveSourceReplyVisibilityPolicy } from "./source-reply-delivery-mode.js";
@@ -1832,6 +1840,17 @@ export async function runReplyAgent(params: {
     const ctxTokens = runResult.meta?.agentMeta?.contextTokens;
     const compactions = runResult.meta?.agentMeta?.compactionCount;
     const lastCallUsage = runResult.meta?.agentMeta?.lastCallUsage;
+    const providerUsageWindows = await resolveReplyProviderUsageWindows({
+      config: cfg,
+      provider: providerUsed,
+      model: modelUsed,
+      authMode: runResult.meta?.requestShaping?.authMode ?? undefined,
+      agentId: followupRun.run.agentId,
+      sessionKey: followupRun.run.runtimePolicySessionKey ?? followupRun.run.sessionKey,
+      authProfileId: followupRun.run.authProfileId,
+      agentDir: followupRun.run.agentDir,
+      workspaceDir: followupRun.run.workspaceDir,
+    });
     const replyUsageState = buildReplyUsageState({
       config: cfg,
       provider: providerUsed,
@@ -1853,6 +1872,7 @@ export async function runReplyAgent(params: {
       sessionId: followupRun.run.sessionId,
       chatType: typeof sessionCtx.ChatType === "string" ? sessionCtx.ChatType : undefined,
       authMode: runResult.meta?.requestShaping?.authMode ?? undefined,
+      cwd: followupRun.run.cwd ?? followupRun.run.workspaceDir,
       overrideSource: activeSessionEntry?.modelOverrideSource ?? undefined,
       requestedProvider: followupRun.run.provider,
       requestedModel: followupRun.run.model,
@@ -1865,6 +1885,7 @@ export async function runReplyAgent(params: {
           ? promptTokens
           : undefined,
       promptTokens,
+      providerUsageWindows,
       usage,
       lastCallUsage,
     });
@@ -1991,6 +2012,22 @@ export async function runReplyAgent(params: {
     ) {
       await opts.onObservedReplyDelivery?.();
     }
+    const responseUsageSessionRaw =
+      activeSessionEntry?.responseUsage ??
+      (sessionKey ? activeSessionStore?.[sessionKey]?.responseUsage : undefined);
+    const responseUsageLine = resolveResponseUsageLine({
+      config: cfg,
+      sessionRaw: responseUsageSessionRaw,
+      channel: replyToChannel,
+      usage,
+      provider: providerUsed,
+      model: modelUsed,
+      preserveUserFacingSessionState,
+      replyUsageState,
+    });
+    const responseUsageOnlyPayload = responseUsageLine
+      ? markReplyPayloadAsResponseUsageFooter({ text: responseUsageLine })
+      : undefined;
     const returnSilentFallbackFailureIfNeeded = async (): Promise<ReplyPayload | undefined> => {
       const silentFallbackFailurePayload = buildSilentFallbackFailurePayload({
         fallbackTransition,
@@ -2086,6 +2123,10 @@ export async function runReplyAgent(params: {
     // Otherwise, a late typing trigger (e.g. from a tool callback) can outlive the run and
     // keep the typing indicator stuck.
     if (payloadArray.length === 0 && fallbackNoticePayloads.length === 0) {
+      if (responseUsageOnlyPayload && successfulSourceReplyDelivery) {
+        await signalTypingIfNeeded([responseUsageOnlyPayload], typingSignals);
+        return returnWithQueuedFollowupDrain(responseUsageOnlyPayload);
+      }
       const silentFallbackFailurePayload = await returnSilentFallbackFailureIfNeeded();
       if (silentFallbackFailurePayload) {
         return silentFallbackFailurePayload;
@@ -2140,6 +2181,10 @@ export async function runReplyAgent(params: {
       replyPayloads.length === 0 ||
       (!hasReplyPayloadBeyondFallbackNotice && !canDeliverStandaloneFallbackNotice)
     ) {
+      if (responseUsageOnlyPayload && successfulSourceReplyDelivery) {
+        await signalTypingIfNeeded([responseUsageOnlyPayload], typingSignals);
+        return returnWithQueuedFollowupDrain(responseUsageOnlyPayload);
+      }
       const silentFallbackFailurePayload = await returnSilentFallbackFailureIfNeeded();
       if (silentFallbackFailurePayload) {
         return silentFallbackFailurePayload;
@@ -2235,20 +2280,6 @@ export async function runReplyAgent(params: {
         durationMs: Date.now() - runStartedAt,
       });
     }
-
-    const responseUsageSessionRaw =
-      activeSessionEntry?.responseUsage ??
-      (sessionKey ? activeSessionStore?.[sessionKey]?.responseUsage : undefined);
-    const responseUsageLine = resolveResponseUsageLine({
-      config: cfg,
-      sessionRaw: responseUsageSessionRaw,
-      channel: replyToChannel,
-      usage,
-      provider: providerUsed,
-      model: modelUsed,
-      preserveUserFacingSessionState,
-      replyUsageState,
-    });
 
     if (verboseEnabled) {
       activeSessionEntry = refreshSessionEntryFromStore({
@@ -2458,7 +2489,7 @@ export async function runReplyAgent(params: {
       finalPayloads = [...finalPayloads, trailingPluginStatusPayload];
     }
     if (responseUsageLine) {
-      finalPayloads = appendUsageLine(finalPayloads, responseUsageLine);
+      finalPayloads = appendUsageLineForDelivery(finalPayloads, responseUsageLine);
     }
     if (isHookBlockedRun) {
       finalPayloads = markBeforeAgentRunBlockedPayloads(finalPayloads);

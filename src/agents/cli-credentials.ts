@@ -5,6 +5,7 @@
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   asDateTimestampMs,
@@ -416,12 +417,14 @@ function readGeminiCliCredentials(options?: { homeDir?: string }): GeminiCliCred
   };
 }
 
-function readClaudeCliKeychainCredentials(
-  execSyncImpl: ExecSyncFn = execSync,
+function readClaudeCliKeychainEntry(
+  execSyncImpl: ExecSyncFn,
+  account?: string,
 ): ClaudeCliCredential | null {
   try {
+    const accountArg = account ? ` -a "${account}"` : "";
     const result = execSyncImpl(
-      `security find-generic-password -s "${CLAUDE_CLI_KEYCHAIN_SERVICE}" -w`,
+      `security find-generic-password -s "${CLAUDE_CLI_KEYCHAIN_SERVICE}"${accountArg} -w`,
       { encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] },
     );
 
@@ -430,6 +433,44 @@ function readClaudeCliKeychainCredentials(
   } catch {
     return null;
   }
+}
+
+function isClaudeCliCredentialFresh(credential: ClaudeCliCredential): boolean {
+  return Number.isFinite(credential.expires) && credential.expires > Date.now();
+}
+
+function readClaudeCliKeychainCredentials(
+  execSyncImpl: ExecSyncFn = execSync,
+): ClaudeCliCredential | null {
+  // The macOS keychain can hold multiple "Claude Code-credentials" generic
+  // passwords under different accounts (e.g. a stale entry written while a
+  // process ran as root, plus the live one under the login user). An unscoped
+  // `security find-generic-password -w` returns an arbitrary match, which may be
+  // the expired duplicate. That made Claude usage telemetry (statusline windows)
+  // silently fail — the OAuth usage endpoint 401s on the stale token — while
+  // inference kept working because the claude binary reauths itself. Prefer the
+  // entry for the current login user, then fall back to the unscoped read, and
+  // pick the credential with the furthest-future expiry when both resolve.
+  let currentUser: string | undefined;
+  try {
+    currentUser = os.userInfo().username;
+  } catch {
+    currentUser = undefined;
+  }
+  const scoped = currentUser ? readClaudeCliKeychainEntry(execSyncImpl, currentUser) : null;
+  if (scoped && isClaudeCliCredentialFresh(scoped)) {
+    return scoped;
+  }
+  const unscoped = readClaudeCliKeychainEntry(execSyncImpl);
+  const candidates = [scoped, unscoped].filter(
+    (candidate): candidate is ClaudeCliCredential => candidate !== null,
+  );
+  if (candidates.length === 0) {
+    return null;
+  }
+  return candidates.reduce((best, candidate) =>
+    candidate.expires > best.expires ? candidate : best,
+  );
 }
 
 /** Reads Claude CLI credentials from macOS Keychain or the CLI credential file. */

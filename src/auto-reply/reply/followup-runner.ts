@@ -64,7 +64,10 @@ import {
   resolveSessionRuntimeOverrideForProvider,
 } from "./agent-runner-execution.js";
 import { runPreflightCompactionIfNeeded } from "./agent-runner-memory.js";
-import { appendUsageLine, resolveResponseUsageLine } from "./agent-runner-usage-line.js";
+import {
+  appendUsageLineForDelivery,
+  resolveResponseUsageLine,
+} from "./agent-runner-usage-line.js";
 import {
   resolveQueuedReplyExecutionConfig,
   resolveQueuedReplyRuntimeConfig,
@@ -91,7 +94,7 @@ import {
 import type { ReplyDispatchKind } from "./reply-dispatcher.types.js";
 import type { ReplyOperation } from "./reply-run-registry.js";
 import { admitReplyTurn } from "./reply-turn-admission.js";
-import { buildReplyUsageState } from "./reply-usage-state.js";
+import { buildReplyUsageState, resolveReplyProviderUsageWindows } from "./reply-usage-state.js";
 import { isRoutableChannel, routeReply } from "./route-reply.js";
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
 import { createTypingSignaler } from "./typing-mode.js";
@@ -1416,6 +1419,17 @@ export function createFollowupRunner(params: {
         ? undefined
         : (runResult.meta?.executionTrace?.winnerModel ?? modelUsed);
       const lastCallUsage = runResult.meta?.agentMeta?.lastCallUsage;
+      const providerUsageWindows = await resolveReplyProviderUsageWindows({
+        config: runtimeConfig,
+        provider: providerUsed,
+        model: modelUsed,
+        authMode: runResult.meta?.requestShaping?.authMode ?? undefined,
+        agentId: run.agentId,
+        sessionKey: run.runtimePolicySessionKey ?? run.sessionKey,
+        authProfileId: run.authProfileId,
+        agentDir: run.agentDir,
+        workspaceDir: run.workspaceDir,
+      });
       const replyUsageState = buildReplyUsageState({
         config: runtimeConfig,
         provider: providerUsed,
@@ -1429,6 +1443,7 @@ export function createFollowupRunner(params: {
         sessionId: run.sessionId,
         chatType: queued.originatingChatType,
         authMode: runResult.meta?.requestShaping?.authMode ?? undefined,
+        cwd: run.cwd ?? run.workspaceDir,
         overrideSource: activeSessionEntry?.modelOverrideSource ?? undefined,
         requestedProvider: run.provider,
         requestedModel: run.model,
@@ -1441,6 +1456,7 @@ export function createFollowupRunner(params: {
             ? contextTokensUsed
             : undefined,
         promptTokens,
+        providerUsageWindows,
         usage,
         lastCallUsage,
       });
@@ -1458,7 +1474,7 @@ export function createFollowupRunner(params: {
         replyUsageState,
       });
       if (responseUsageLine) {
-        deliveryPayloads = appendUsageLine(deliveryPayloads, responseUsageLine);
+        deliveryPayloads = appendUsageLineForDelivery(deliveryPayloads, responseUsageLine);
       }
       if (autoCompactionCount > 0) {
         const previousSessionId = run.sessionId;

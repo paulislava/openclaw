@@ -187,6 +187,8 @@ export type ReplyPayloadMetadata = {
    * assistant source replies are message-tool-only; sendPolicy deny still wins.
    */
   deliverDespiteSourceReplySuppression?: boolean;
+  /** Internal response-usage footer synthesized after a message-tool source reply. */
+  responseUsageFooter?: boolean;
   /**
    * A message-tool reply to the active internal UI source. The final payload is
    * still the live delivery vehicle; this mirror makes the reply durable for
@@ -238,6 +240,19 @@ export function markReplyPayloadForSourceSuppressionDelivery<T extends object>(p
   return setReplyPayloadMetadata(payload, {
     deliverDespiteSourceReplySuppression: true,
   });
+}
+
+/** Marks a synthesized response-usage footer for delivery after a message-tool source reply. */
+export function markReplyPayloadAsResponseUsageFooter<T extends ReplyPayload>(payload: T): T {
+  return setReplyPayloadMetadata(
+    markReplyPayloadForSourceSuppressionDelivery({
+      ...payload,
+      isStatusNotice: true,
+    } as T),
+    {
+      responseUsageFooter: true,
+    },
+  );
 }
 
 export function markCommandReplyForDelivery(

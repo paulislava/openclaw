@@ -2206,6 +2206,44 @@ describe("TelegramPollingSession", () => {
     });
   });
 
+  it("dead-letters spooled backlog older than 24 hours before replaying fresh updates", async () => {
+    await withTempSpool(async (tempDir) => {
+      const abort = new AbortController();
+      const log = vi.fn();
+      const events: string[] = [];
+      const now = Date.now();
+      await writeTelegramSpooledUpdate({
+        spoolDir: tempDir,
+        update: topicUpdate(42, 10, "stale topic turn"),
+        now: now - 25 * 60 * 60 * 1000,
+      });
+      await writeTelegramSpooledUpdate({
+        spoolDir: tempDir,
+        update: topicUpdate(43, 11, "fresh topic turn"),
+        now,
+      });
+
+      const { runPromise, stopWorker } = startIsolatedIngressSession({
+        abort,
+        spoolDir: tempDir,
+        log,
+        handleUpdate: async (update) => {
+          events.push(`handled:${update.update_id}`);
+          abort.abort();
+        },
+      });
+
+      await runPromise;
+      expect(events).toEqual(["handled:43"]);
+      expect(await failedUpdateReasons(tempDir)).toEqual([
+        { id: 42, reason: "stale-spooled-update" },
+      ]);
+      expect(await pendingUpdateIds(tempDir, "all")).toEqual([]);
+      expectLogIncludes(log, "older than the replay backlog window");
+      stopWorker();
+    });
+  });
+
   it("recovers unowned processing claims after the initial drain", async () => {
     await withTempSpool(async (tempDir) => {
       const abort = new AbortController();

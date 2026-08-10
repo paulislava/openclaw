@@ -155,7 +155,7 @@ export type TelegramAccountConfig = {
   mentionPatterns?: MentionPatternsPolicyConfig;
   /** Supplemental context visibility policy (all|allowlist|allowlist_quote). */
   contextVisibility?: ContextVisibilityMode;
-  /** Controls prior Telegram group messages included in prompt context. Default: mention-only. */
+  /** Controls prior Telegram group messages included in prompt context. Default: recent. */
   includeGroupHistoryContext?: TelegramGroupHistoryContextMode;
   /** Max group messages to keep as history context (0 disables). */
   historyLimit?: number;

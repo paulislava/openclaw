@@ -13,6 +13,7 @@ describe("provider-usage.shared", () => {
     { value: "deepseek", expected: "deepseek" },
     { value: "zai", expected: "zai" },
     { value: "z-ai", expected: undefined },
+    { value: "claude-cli", expected: "anthropic" },
     { value: " GOOGLE-GEMINI-CLI ", expected: "google-gemini-cli" },
     { value: "minimax-portal", expected: "minimax" },
     { value: "minimax-cn", expected: "minimax" },
@@ -29,6 +30,8 @@ describe("provider-usage.shared", () => {
     expect(resolveUsageProviderId("openai", { credentialType: "oauth" })).toBe("openai");
     expect(resolveUsageProviderId("openai", { credentialType: "token" })).toBe("openai");
     expect(resolveUsageProviderId("openai", { credentialType: "api_key" })).toBeUndefined();
+    expect(resolveUsageProviderId("codex", { credentialType: "token" })).toBe("openai");
+    expect(resolveUsageProviderId("codex", { credentialType: "api_key" })).toBeUndefined();
   });
 
   it.each([

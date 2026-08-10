@@ -152,9 +152,10 @@ describe("buildTelegramMessageContext requireMention precedence", () => {
     expect(ctx?.ctxPayload.Body).toContain("side chatter");
   });
 
-  it("omits pending group room events from default body context", async () => {
+  it("omits pending group room events from body context when mention-only is explicit", async () => {
     const groupHistories = new Map();
     const cfg = {
+      channels: { telegram: { includeGroupHistoryContext: "mention-only" } },
       messages: { groupChat: { unmentionedInbound: "room_event", mentionPatterns: [] } },
     };
     await buildTelegramMessageContextForTest({

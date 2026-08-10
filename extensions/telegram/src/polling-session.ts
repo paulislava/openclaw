@@ -36,6 +36,7 @@ import { getTelegramSequentialKey } from "./sequential-key.js";
 import {
   claimNextTelegramSpooledUpdate,
   deleteTelegramSpooledUpdate,
+  failTelegramSpooledUpdate,
   failTelegramSpooledUpdateClaim,
   isTelegramSpooledUpdateClaimOwnedByOtherLiveProcess,
   listTelegramSpooledUpdateClaims,
@@ -133,6 +134,7 @@ const TELEGRAM_SPOOLED_HANDLER_ABORT_GRACE_MS = 5_000;
 const TELEGRAM_SPOOLED_HANDLER_TIMEOUT_ENV = "OPENCLAW_TELEGRAM_SPOOLED_HANDLER_TIMEOUT_MS";
 const TELEGRAM_SPOOLED_DRAIN_START_LIMIT = 100;
 const TELEGRAM_SPOOLED_DRAIN_SCAN_LIMIT = TELEGRAM_SPOOLED_DRAIN_START_LIMIT * 10;
+const TELEGRAM_SPOOLED_BACKLOG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const TELEGRAM_SPOOLED_CLAIM_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const TELEGRAM_SPOOLED_CLAIM_HEALTH_GRACE_MS = 2 * TELEGRAM_SPOOLED_CLAIM_REFRESH_INTERVAL_MS;
 const TELEGRAM_SPOOLED_SESSION_INIT_CONFLICT_RETRY_BASE_MS = 5_000;
@@ -852,6 +854,44 @@ export class TelegramPollingSession {
     );
   }
 
+  async #deadLetterStaleSpooledBacklog(
+    updates: readonly TelegramSpooledUpdate[],
+  ): Promise<TelegramSpooledUpdate[]> {
+    const now = Date.now();
+    const fresh: TelegramSpooledUpdate[] = [];
+    for (const update of updates) {
+      const ageMs = now - update.receivedAt;
+      if (ageMs <= TELEGRAM_SPOOLED_BACKLOG_MAX_AGE_MS) {
+        fresh.push(update);
+        continue;
+      }
+      const maxAge = formatDurationPrecise(TELEGRAM_SPOOLED_BACKLOG_MAX_AGE_MS);
+      const age = formatDurationPrecise(ageMs);
+      const message = `Telegram spooled update ${update.updateId} is older than the replay backlog window (${age} > ${maxAge}); dead-lettering instead of replaying.`;
+      try {
+        const failed = await failTelegramSpooledUpdate({
+          update,
+          reason: "stale-spooled-update",
+          message,
+          now,
+        });
+        if (failed) {
+          this.opts.log(`[telegram][diag] ${message}`);
+        } else {
+          this.opts.log(
+            `[telegram][diag] spooled update ${update.updateId} exceeded the replay backlog window, but no pending row remained to dead-letter.`,
+          );
+        }
+      } catch (err) {
+        fresh.push(update);
+        this.opts.log(
+          `[telegram][diag] spooled update ${update.updateId} exceeded the replay backlog window, but could not be dead-lettered: ${formatErrorMessage(err)}`,
+        );
+      }
+    }
+    return fresh;
+  }
+
   async #waitForSpooledUpdateHandlers(): Promise<void> {
     await Promise.allSettled([
       ...[...this.#spooledUpdateHandlerKeys]
@@ -924,10 +964,11 @@ export class TelegramPollingSession {
       spoolDir: params.spoolDir,
       limit: TELEGRAM_SPOOLED_DRAIN_SCAN_LIMIT,
     });
-    const candidateUpdateIds = updates.map((update) => update.updateId);
+    const replayableUpdates = await this.#deadLetterStaleSpooledBacklog(updates);
+    const candidateUpdateIds = replayableUpdates.map((update) => update.updateId);
     const blockedByLane = new Set<string>();
     const retryDelayedLaneKeys = new Set<string>();
-    for (const update of updates) {
+    for (const update of replayableUpdates) {
       const laneKey = this.#spooledUpdateLaneKey(update);
       const handlerKey = buildSpooledUpdateHandlerKey({ spoolDir: params.spoolDir, laneKey });
       if (activeSpooledUpdateHandlersByLane.has(handlerKey)) {
