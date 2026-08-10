@@ -944,7 +944,10 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     expect(config).toEqual(configBefore);
   });
 
-  it("preserves explicit compaction.model behavior without session fallback", async () => {
+  it("retries through session fallback even with an explicit compaction.model", async () => {
+    // An explicit agents.defaults.compaction.model must not disable the
+    // model-fallback retry loop when fallback candidates are configured
+    // (see compact.fallback-gate.test.ts for the focused fallback-gate proof).
     resolveModelMock.mockImplementation((provider = "openai", modelId = "fake") => ({
       model: { provider, api: "responses", id: modelId, input: [] },
       error: null,
@@ -977,8 +980,8 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
       } as never,
     });
 
-    expect(result.ok).toBe(false);
-    expect(resolveModelMock).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    expect(resolveModelMock).toHaveBeenCalledTimes(2);
     expect(mockCallArg(resolveModelMock)).toBe("azure");
     expect(mockCallArg(resolveModelMock, 0, 1)).toBe("compact-primary");
     expect(mockCallArg(resolveModelMock, 0, 2)).toBeTypeOf("string");

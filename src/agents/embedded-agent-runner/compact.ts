@@ -417,10 +417,6 @@ function containsRealConversationMessages(messages: AgentMessage[]): boolean {
   );
 }
 
-function hasExplicitCompactionModel(params: CompactEmbeddedAgentSessionParams): boolean {
-  return Boolean(params.config?.agents?.defaults?.compaction?.model?.trim());
-}
-
 function resolveCompactionFallbacksOverride(
   params: CompactEmbeddedAgentSessionParams,
 ): string[] | undefined {
@@ -484,7 +480,7 @@ export async function compactEmbeddedAgentSessionDirect(
     sessionKey: paramsBase.sessionKey ?? runSessionTarget.sessionKey,
     sessionFile: runSessionTarget.sessionFile,
   };
-  if (hasExplicitCompactionModel(params) || !hasCompactionModelFallbackCandidates(params)) {
+  if (!hasCompactionModelFallbackCandidates(params)) {
     return await compactEmbeddedAgentSessionDirectOnce(params);
   }
   const resolvedCompactionTarget = resolveEmbeddedCompactionTarget({
