@@ -135,7 +135,7 @@ export async function compactViaClaudeCli(
       tokensBefore: input.tokensBefore,
     });
   } finally {
-    await prepared.preparedBackend?.cleanup?.();
+    await prepared.preparedBackend.cleanup?.();
   }
 }
 

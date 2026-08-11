@@ -121,7 +121,9 @@ export async function maybeCompactAgentHarnessSession(
 ): Promise<EmbeddedAgentCompactResult | undefined> {
   if (params.provider && isCliRuntimeProvider(params.provider, { config: params.config })) {
     // claude-cli summarizes AND persists through its own one-shot CLI path; every
-    // other CLI runtime still bails to the embedded summarizer.
+    // other CLI runtime still bails to the embedded summarizer. This gate returns
+    // before harness/context-engine selection below runs, so `agentHarnessId` and
+    // any context-engine params callers pass are intentionally ignored here.
     return isClaudeCliRuntimeId(params.provider) ? await compactViaClaudeCli(params) : undefined;
   }
   const runtimePolicySessionKey = params.sandboxSessionKey ?? params.sessionKey;

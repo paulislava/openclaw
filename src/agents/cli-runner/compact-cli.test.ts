@@ -69,7 +69,13 @@ function stubDeps(overrides?: {
   tokensBefore?: number;
   previousSummary?: string;
 }) {
-  const prepared = { marker: "prepared-context" } as unknown as PreparedCliRunContext;
+  // preparedBackend is non-optional on PreparedCliRunContext (types.ts); stub it
+  // so the real `prepared.preparedBackend.cleanup?.()` call site stays honestly
+  // typed without a redundant optional chain masking a missing field here.
+  const prepared = {
+    marker: "prepared-context",
+    preparedBackend: { cleanup: vi.fn(async () => {}) },
+  } as unknown as PreparedCliRunContext;
   const prepareCliRunContext = vi.fn(
     async (_params: RunCliAgentParams): Promise<PreparedCliRunContext> => prepared,
   );
@@ -211,7 +217,10 @@ describe("compactViaClaudeCli", () => {
     setCompactCliTestDeps({
       prepareCliRunContext: vi.fn(
         async (): Promise<PreparedCliRunContext> =>
-          ({ marker: "prepared" }) as unknown as PreparedCliRunContext,
+          ({
+            marker: "prepared",
+            preparedBackend: { cleanup: vi.fn(async () => {}) },
+          }) as unknown as PreparedCliRunContext,
       ),
       executePreparedCliRun: vi.fn(async (): Promise<CliOutput> => ({ text: SUMMARY })),
       loadCompactionSummarizationInput: vi.fn(async () => ({
@@ -277,7 +286,10 @@ describe("compactViaClaudeCli", () => {
     setCompactCliTestDeps({
       prepareCliRunContext: vi.fn(
         async (): Promise<PreparedCliRunContext> =>
-          ({ marker: "prepared" }) as unknown as PreparedCliRunContext,
+          ({
+            marker: "prepared",
+            preparedBackend: { cleanup: vi.fn(async () => {}) },
+          }) as unknown as PreparedCliRunContext,
       ),
       executePreparedCliRun: vi.fn(async (): Promise<CliOutput> => ({ text: SUMMARY })),
       loadCompactionSummarizationInput: vi.fn(async () => ({
