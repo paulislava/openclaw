@@ -37,8 +37,8 @@ import {
 import { executePreparedCliRun as executePreparedCliRunImpl } from "./execute.runtime.js";
 import { prepareCliRunContext as prepareCliRunContextImpl } from "./prepare.runtime.js";
 
-/** CLI backend id that owns Claude CLI compaction. */
-const CLAUDE_CLI_PROVIDER = "claude-cli";
+/** CLI backend id/runtime that owns Claude CLI compaction; routing gates on it. */
+export const CLAUDE_CLI_PROVIDER = "claude-cli";
 
 /** Default per-run timeout for a one-shot compaction CLI call. */
 const DEFAULT_COMPACTION_TIMEOUT_MS = 120_000;
@@ -71,12 +71,14 @@ function nothingToCompact(): EmbeddedAgentCompactResult {
 
 /**
  * Produces a compaction summary for a `claude-cli` session through a one-shot
- * CLI run. Returns `undefined` only when the provider is not a Claude CLI
- * backend, so routing (Task 4) can fall through to another summarizer.
+ * CLI run. `maybeCompactAgentHarnessSession` is the sole gatekeeper: it only
+ * calls this once the resolved provider/runtime is known to be `claude-cli`, so
+ * this always returns a concrete compaction result (never `undefined`) and
+ * failures propagate to the caller instead of silently re-routing to embedded.
  */
 export async function compactViaClaudeCli(
   params: CompactEmbeddedAgentSessionParams,
-): Promise<EmbeddedAgentCompactResult | undefined> {
+): Promise<EmbeddedAgentCompactResult> {
   const input: CompactionSummarizationInput =
     await compactCliDeps.loadCompactionSummarizationInput(params);
   if (input.messagesToSummarize.length === 0) {
