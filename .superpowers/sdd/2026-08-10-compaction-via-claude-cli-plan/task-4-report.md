@@ -160,4 +160,4 @@ they were NOT created by this task and are NOT staged (committer takes an explic
 
 ## Commit
 
-<COMMIT_HASH_PLACEHOLDER>
+7e52458bce feat(agents): route claude-cli compaction through one-shot Claude CLI summarizer
