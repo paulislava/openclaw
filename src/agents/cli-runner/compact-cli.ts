@@ -7,14 +7,29 @@
  * agent-core summarization prompt, runs a fresh, tool-less, print-mode CLI call
  * on the `claude-cli` backend, and lifts the summary text out of CliOutput.
  *
- * Scope: this module owns producing the summary TEXT only. Persisting the
- * summary into the successor transcript / checkpoint machinery is the caller's
- * job (Task 3) — it consumes the `result` payload returned here, which mirrors
- * the shape produced by `session.compact()` in the embedded path.
+ * Scope: this module produces the summary TEXT via the CLI, then persists it
+ * through the SAME successor-transcript / checkpoint machinery the embedded
+ * path uses (`SessionManager.appendCompaction` → `rotateTranscriptAfterCompaction`
+ * → checkpoint store). The CLI-produced summary is fed into the pre-computed
+ * `{ summary, firstKeptEntryId, tokensBefore }` shape that embedded persistence
+ * already consumes, so Task 4 routing just calls this one function.
  */
+import {
+  createFileBackedCompactionCheckpointStore,
+  readSessionLeafStateFromTranscriptAsync,
+  resolveCompactionCheckpointTranscriptPosition,
+  resolveSessionCompactionCheckpointReason,
+} from "../../gateway/session-compaction-checkpoints.js";
+import { formatErrorMessage } from "../../infra/errors.js";
 import type { CompactEmbeddedAgentSessionParams } from "../embedded-agent-runner/compact.types.js";
+import {
+  rotateTranscriptAfterCompaction,
+  shouldRotateCompactionTranscript,
+} from "../embedded-agent-runner/compaction-successor-transcript.js";
+import { log } from "../embedded-agent-runner/logger.js";
 import type { EmbeddedAgentCompactResult } from "../embedded-agent-runner/types.js";
 import { buildCompactionSummaryPrompt } from "../runtime/index.js";
+import { estimateTokens, SessionManager } from "../sessions/index.js";
 import {
   loadCompactionSummarizationInput as loadCompactionSummarizationInputImpl,
   type CompactionSummarizationInput,
@@ -28,15 +43,26 @@ const CLAUDE_CLI_PROVIDER = "claude-cli";
 /** Default per-run timeout for a one-shot compaction CLI call. */
 const DEFAULT_COMPACTION_TIMEOUT_MS = 120_000;
 
+/** Reuses the embedded checkpoint store so CLI + embedded persistence stay identical. */
+const compactionCheckpointStore = createFileBackedCompactionCheckpointStore();
+
 const compactCliDeps = {
   prepareCliRunContext: prepareCliRunContextImpl,
   executePreparedCliRun: executePreparedCliRunImpl,
   loadCompactionSummarizationInput: loadCompactionSummarizationInputImpl,
+  persistCompactionSummary: persistCompactionSummaryImpl,
 };
+
+const compactCliDefaultDeps = { ...compactCliDeps };
 
 /** Overrides CLI/compaction dependencies for one-shot compaction tests. */
 export function setCompactCliTestDeps(overrides: Partial<typeof compactCliDeps>): void {
   Object.assign(compactCliDeps, overrides);
+}
+
+/** Restores the real CLI/compaction dependencies (test cleanup only). */
+export function resetCompactCliTestDeps(): void {
+  Object.assign(compactCliDeps, compactCliDefaultDeps);
 }
 
 function nothingToCompact(): EmbeddedAgentCompactResult {
@@ -97,16 +123,125 @@ export async function compactViaClaudeCli(
         reason: "claude-cli compaction produced no summary text",
       };
     }
-    return {
-      ok: true,
-      compacted: true,
-      result: {
-        summary,
-        firstKeptEntryId: input.firstKeptEntryId,
-        tokensBefore: input.tokensBefore,
-      },
-    };
+    // The CLI only produced the summary TEXT; persist it through the same
+    // successor-transcript / checkpoint machinery the embedded path uses so the
+    // caller (Task 4 routing) gets a fully-populated compaction result.
+    return await compactCliDeps.persistCompactionSummary({
+      params,
+      summary,
+      firstKeptEntryId: input.firstKeptEntryId,
+      tokensBefore: input.tokensBefore,
+    });
   } finally {
     await prepared.preparedBackend?.cleanup?.();
   }
+}
+
+/** Sums per-message token estimates for the remaining post-compaction context. */
+function estimateRemainingTokens(
+  messages: ReturnType<SessionManager["buildSessionContext"]>["messages"],
+): number {
+  let total = 0;
+  for (const message of messages) {
+    try {
+      total += estimateTokens(message);
+    } catch {
+      // A malformed message must not abort persistence; skip its estimate.
+    }
+  }
+  return total;
+}
+
+/**
+ * Persists a pre-computed compaction summary into the session using the same
+ * embedded machinery: append the compaction entry to the transcript, rotate the
+ * successor transcript when configured, and record the compaction checkpoint.
+ * Mirrors `compactEmbeddedAgentSessionDirect`'s persistence tail, only the
+ * summary source differs (CLI instead of the embedded HTTP summarizer).
+ */
+async function persistCompactionSummaryImpl(input: {
+  params: CompactEmbeddedAgentSessionParams;
+  summary: string;
+  firstKeptEntryId: string;
+  tokensBefore: number;
+}): Promise<EmbeddedAgentCompactResult> {
+  const { params, summary, firstKeptEntryId, tokensBefore } = input;
+  const sessionManager = SessionManager.open(params.sessionFile);
+
+  // Capture the pre-compaction transcript identity BEFORE appending so the
+  // checkpoint can fork the exact original branch, matching the embedded path.
+  const checkpointSnapshot = await compactionCheckpointStore.captureSnapshot({
+    sessionManager,
+    sessionFile: params.sessionFile,
+  });
+
+  sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore);
+  const tokensAfter = estimateRemainingTokens(sessionManager.buildSessionContext().messages);
+  const postCompactionLeafId = sessionManager.getLeafId() ?? undefined;
+
+  let activeSessionId = params.sessionId;
+  let activeSessionFile = params.sessionFile;
+  let activeLeafId = postCompactionLeafId;
+  let rotatedSessionId: string | undefined;
+  let rotatedSessionFile: string | undefined;
+  if (shouldRotateCompactionTranscript(params.config)) {
+    try {
+      const rotation = await rotateTranscriptAfterCompaction({
+        sessionManager,
+        sessionFile: params.sessionFile,
+      });
+      if (rotation.rotated) {
+        rotatedSessionId = rotation.sessionId;
+        rotatedSessionFile = rotation.sessionFile;
+        activeSessionId = rotation.sessionId ?? activeSessionId;
+        activeSessionFile = rotation.sessionFile ?? activeSessionFile;
+        activeLeafId = rotation.leafId ?? activeLeafId;
+      }
+    } catch (err) {
+      log.warn("[compaction] claude-cli successor transcript rotation failed", {
+        errorMessage: formatErrorMessage(err),
+      });
+    }
+  }
+
+  if (params.config && params.sessionKey && checkpointSnapshot) {
+    try {
+      const transcriptState = await readSessionLeafStateFromTranscriptAsync(activeSessionFile);
+      const checkpointPosition = resolveCompactionCheckpointTranscriptPosition({
+        preferredLeafId: activeLeafId,
+        transcriptState,
+      });
+      await compactionCheckpointStore.persistCheckpoint({
+        cfg: params.config,
+        sessionKey: params.sessionKey,
+        sessionId: activeSessionId,
+        reason: resolveSessionCompactionCheckpointReason({ trigger: params.trigger }),
+        snapshot: checkpointSnapshot,
+        summary,
+        firstKeptEntryId,
+        tokensBefore,
+        tokensAfter,
+        postSessionFile: activeSessionFile,
+        postLeafId: checkpointPosition.leafId,
+        postEntryId: checkpointPosition.entryId,
+      });
+    } catch (err) {
+      log.warn("[compaction] failed to persist claude-cli compaction checkpoint", {
+        errorMessage: formatErrorMessage(err),
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    compacted: true,
+    result: {
+      summary,
+      firstKeptEntryId,
+      tokensBefore,
+      tokensAfter,
+      ...(rotatedSessionId ? { sessionId: rotatedSessionId } : {}),
+      ...(rotatedSessionFile ? { sessionFile: rotatedSessionFile } : {}),
+    },
+  };
 }
