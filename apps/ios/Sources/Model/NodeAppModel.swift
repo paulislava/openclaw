@@ -2099,6 +2099,30 @@ extension NodeAppModel {
             forceReconnect: forceReconnect)
     }
 
+    /// Записать реквизиты текущего gateway в App Group, чтобы виджет мог сам дергать /api/lock.
+    func syncLockGatewayConfig() {
+        guard let conn = GatewaySettingsStore.loadLastGatewayConnection() else { return }
+        let host: String
+        let port: Int
+        let useTLS: Bool
+        let stableID: String
+        switch conn {
+        case let .manual(h, p, tls, sid):
+            host = h; port = p; useTLS = tls; stableID = sid
+        case .discovered:
+            // Для discovered-режима нет чистого API резолвинга активного host:port —
+            // откладываем до появления такого геттера (виджет покажет «нет данных»).
+            return
+        }
+        let scheme = useTLS ? "https" : "http"
+        let base = "\(scheme)://\(host):\(port)"
+        let token = GatewaySettingsStore.loadGatewayToken(instanceId: stableID) ?? ""
+        let fingerprint = useTLS ? GatewayTLSStore.loadFingerprint(stableID: stableID) : nil
+        guard !token.isEmpty else { return }
+        LockSharedStore.saveConfig(
+            LockGatewayConfig(baseURL: base, token: token, fingerprint: fingerprint))
+    }
+
     func resetGatewaySessionsForForcedReconnect() async {
         let nodeGatewayTask = self.nodeGatewayTask
         let operatorGatewayTask = self.operatorGatewayTask
@@ -3109,6 +3133,7 @@ extension NodeAppModel {
 
     /// Back-compat hook retained for older gateway-connect flows.
     func onNodeGatewayConnected() async {
+        self.syncLockGatewayConfig()
         await self.registerAPNsTokenIfNeeded()
         await self.flushQueuedWatchRepliesIfConnected()
         await self.syncWatchAppSnapshot(reason: "node_connected", includeChat: true)
