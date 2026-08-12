@@ -1,6 +1,7 @@
 /**
  * Routes compaction through selected native agent harnesses when supported.
  */
+import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
@@ -8,6 +9,7 @@ import { resolveUserPath } from "../../utils.js";
 import type { Model } from "openclaw/plugin-sdk/llm";
 import { isDefaultAgentRuntimeId, normalizeOptionalAgentRuntimeId } from "../agent-runtime-id.js";
 import { resolveAgentDir, resolveSessionAgentIds } from "../agent-scope.js";
+import { CLAUDE_CLI_PROVIDER, compactViaClaudeCli } from "../cli-runner/compact-cli.js";
 import type { CompactEmbeddedAgentSessionParams } from "../embedded-agent-runner/compact.types.js";
 import { resolveModelAsync } from "../embedded-agent-runner/model.js";
 import type { EmbeddedAgentCompactResult } from "../embedded-agent-runner/types.js";
@@ -28,6 +30,11 @@ import type {
  * can opt in through their `compact` hook.
  */
 const log = createSubsystemLogger("agents/harness");
+
+/** True when a CLI runtime/provider alias id resolves to the Claude CLI backend. */
+function isClaudeCliRuntimeId(id: string | undefined): boolean {
+  return normalizeProviderId(id ?? "") === CLAUDE_CLI_PROVIDER;
+}
 
 type NativeCompactionRequest = "after_context_engine";
 
@@ -113,7 +120,11 @@ export async function maybeCompactAgentHarnessSession(
   options: InternalAgentHarnessCompactionOptions = {},
 ): Promise<EmbeddedAgentCompactResult | undefined> {
   if (params.provider && isCliRuntimeProvider(params.provider, { config: params.config })) {
-    return undefined;
+    // claude-cli summarizes AND persists through its own one-shot CLI path; every
+    // other CLI runtime still bails to the embedded summarizer. This gate returns
+    // before harness/context-engine selection below runs, so `agentHarnessId` and
+    // any context-engine params callers pass are intentionally ignored here.
+    return isClaudeCliRuntimeId(params.provider) ? await compactViaClaudeCli(params) : undefined;
   }
   const runtimePolicySessionKey = params.sandboxSessionKey ?? params.sessionKey;
   const runtimePolicyAgentId =
@@ -128,7 +139,9 @@ export async function maybeCompactAgentHarnessSession(
     sessionKey: runtimePolicySessionKey,
   }).runtime;
   if (isCliRuntimeAliasForProvider({ runtime, provider: params.provider, cfg: params.config })) {
-    return undefined;
+    // Same split as the provider-alias gate above: only the claude-cli backend
+    // owns a CLI compaction path; other CLI runtimes fall through to embedded.
+    return isClaudeCliRuntimeId(runtime) ? await compactViaClaudeCli(params) : undefined;
   }
   const selectedRuntime = normalizeOptionalAgentRuntimeId(params.agentHarnessId);
   const agentHarnessRuntimeOverride =

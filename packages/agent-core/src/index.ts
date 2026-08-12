@@ -28,6 +28,7 @@ export {
   prepareBranchEntries,
 } from "./harness/compaction/branch-summarization.js";
 export {
+  buildCompactionSummaryPrompt,
   calculateContextTokens,
   compact,
   DEFAULT_COMPACTION_SETTINGS,
@@ -44,6 +45,7 @@ export {
   type CompactionPreparation,
   type CompactionResult,
   type CompactionSettings,
+  type CompactionSummaryPrompt,
   type ContextUsageEstimate,
 } from "./harness/compaction/compaction.js";
 export * from "./harness/utils/truncate.js";

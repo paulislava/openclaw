@@ -34,6 +34,9 @@ const compactAuthMocks = vi.hoisted(() => ({
 const providerOwnerMocks = vi.hoisted(() => ({
   resolveProviderRefOwnership: vi.fn(),
 }));
+const compactCliMocks = vi.hoisted(() => ({
+  compactViaClaudeCli: vi.fn(),
+}));
 
 vi.mock("./builtin-openclaw.js", () => ({
   createOpenClawAgentHarness: (): AgentHarness => ({
@@ -53,6 +56,10 @@ vi.mock("../embedded-agent-runner/model.js", () => ({
 vi.mock("../../plugins/providers.js", () => ({
   resolveProviderRefOwnership: providerOwnerMocks.resolveProviderRefOwnership,
 }));
+vi.mock("../cli-runner/compact-cli.js", () => ({
+  CLAUDE_CLI_PROVIDER: "claude-cli",
+  compactViaClaudeCli: compactCliMocks.compactViaClaudeCli,
+}));
 
 const originalRuntime = process.env.OPENCLAW_AGENT_RUNTIME;
 
@@ -64,6 +71,7 @@ beforeEach(() => {
   compactAuthMocks.getApiKeyForModel.mockResolvedValue({ apiKey: "test-key" });
   providerOwnerMocks.resolveProviderRefOwnership.mockReset();
   providerOwnerMocks.resolveProviderRefOwnership.mockReturnValue({ status: "unowned" });
+  compactCliMocks.compactViaClaudeCli.mockReset();
   cliBackendsTesting.setDepsForTest({
     resolvePluginSetupRegistry: () => ({
       providers: [],
@@ -96,6 +104,7 @@ afterEach(() => {
   compactAuthMocks.resolveModelAsync.mockReset();
   compactAuthMocks.getApiKeyForModel.mockReset();
   providerOwnerMocks.resolveProviderRefOwnership.mockReset();
+  compactCliMocks.compactViaClaudeCli.mockReset();
   if (originalRuntime == null) {
     delete process.env.OPENCLAW_AGENT_RUNTIME;
   } else {
@@ -909,7 +918,9 @@ describe("selectAgentHarness", () => {
     ).toBe("codex");
   });
 
-  it("skips harness compaction preflight for claude-cli runtime sessions", async () => {
+  it("routes claude-cli runtime compaction through the one-shot Claude CLI summarizer", async () => {
+    const cliResult = { ok: true, compacted: true, result: { summary: "cli summary" } } as const;
+    compactCliMocks.compactViaClaudeCli.mockResolvedValueOnce(cliResult);
     await expect(
       maybeCompactAgentHarnessSession({
         sessionId: "session-1",
@@ -920,10 +931,13 @@ describe("selectAgentHarness", () => {
         model: "claude-opus-4-7",
         config: agentModelRuntimeConfig("anthropic/claude-opus-4-7", "claude-cli"),
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(cliResult);
+    expect(compactCliMocks.compactViaClaudeCli).toHaveBeenCalledTimes(1);
   });
 
-  it("skips harness compaction preflight for claude-cli provider sessions", async () => {
+  it("routes claude-cli provider compaction through the one-shot Claude CLI summarizer", async () => {
+    const cliResult = { ok: true, compacted: true, result: { summary: "cli summary" } } as const;
+    compactCliMocks.compactViaClaudeCli.mockResolvedValueOnce(cliResult);
     await expect(
       maybeCompactAgentHarnessSession({
         sessionId: "session-1",
@@ -934,7 +948,59 @@ describe("selectAgentHarness", () => {
         model: "claude-opus-4-7",
         config: providerRuntimeConfig("claude-cli", "claude-cli"),
       }),
+    ).resolves.toBe(cliResult);
+    expect(compactCliMocks.compactViaClaudeCli).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates a claude-cli compaction failure instead of falling back to embedded", async () => {
+    const cliFailure = {
+      ok: false,
+      compacted: false,
+      reason: "claude-cli compaction produced no summary text",
+    } as const;
+    compactCliMocks.compactViaClaudeCli.mockResolvedValueOnce(cliFailure);
+    await expect(
+      maybeCompactAgentHarnessSession({
+        sessionId: "session-1",
+        sessionKey: "agent:main:main",
+        sessionFile: "/tmp/session.jsonl",
+        workspaceDir: "/tmp/workspace",
+        provider: "claude-cli",
+        model: "claude-opus-4-7",
+        config: providerRuntimeConfig("claude-cli", "claude-cli"),
+      }),
+    ).resolves.toBe(cliFailure);
+    expect(compactCliMocks.compactViaClaudeCli).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips harness compaction preflight for non-Claude CLI runtimes without invoking the Claude CLI summarizer", async () => {
+    await expect(
+      maybeCompactAgentHarnessSession({
+        sessionId: "session-1",
+        sessionKey: "agent:main:main",
+        sessionFile: "/tmp/session.jsonl",
+        workspaceDir: "/tmp/workspace",
+        provider: "google",
+        model: "gemini-3-pro-preview",
+        config: agentModelRuntimeConfig("google/gemini-3-pro-preview", "google-gemini-cli"),
+      }),
     ).resolves.toBeUndefined();
+    expect(compactCliMocks.compactViaClaudeCli).not.toHaveBeenCalled();
+  });
+
+  it("skips harness compaction preflight for the google-gemini-cli provider alias", async () => {
+    await expect(
+      maybeCompactAgentHarnessSession({
+        sessionId: "session-1",
+        sessionKey: "agent:main:main",
+        sessionFile: "/tmp/session.jsonl",
+        workspaceDir: "/tmp/workspace",
+        provider: "google-gemini-cli",
+        model: "gemini-3-pro-preview",
+        config: providerRuntimeConfig("google-gemini-cli", "google-gemini-cli"),
+      }),
+    ).resolves.toBeUndefined();
+    expect(compactCliMocks.compactViaClaudeCli).not.toHaveBeenCalled();
   });
 
   it("ignores stale plugin pins during compaction when the provider no longer matches", async () => {

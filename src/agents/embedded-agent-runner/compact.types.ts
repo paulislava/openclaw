@@ -1,3 +1,4 @@
+import type { Model } from "openclaw/plugin-sdk/llm";
 /**
  * Shared parameter and metric types for embedded-agent compaction.
  */
@@ -6,7 +7,6 @@ import type { ReasoningLevel, ThinkLevel } from "../../auto-reply/thinking.js";
 import type { ChatType } from "../../channels/chat-type.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { ContextEngine, ContextEngineRuntimeContext } from "../../context-engine/types.js";
-import type { Model } from "openclaw/plugin-sdk/llm";
 import type { CommandQueueEnqueueFn } from "../../process/command-queue.types.js";
 import type { SkillSnapshot } from "../../skills/types.js";
 import type { ExecElevatedDefaults, ExecToolDefaults } from "../bash-tools.exec-types.js";
@@ -118,6 +118,15 @@ export type CompactEmbeddedAgentSessionRuntimeParams = Omit<
 > & {
   /** Deprecated file-backed artifact target. Prefer sessionTarget for new callers. */
   sessionFile?: string;
+  /**
+   * Internal-only flag set by the model-fallback wrapper's per-attempt calls.
+   * Skips the configured `agents.defaults.compaction.model` override so
+   * fallback attempts honor the explicit provider/model passed by the
+   * fallback loop instead of collapsing back to the override every attempt.
+   * Not part of the public compaction params contract; callers must not set
+   * this directly.
+   */
+  bypassConfiguredCompactionModel?: boolean;
 };
 
 export type CompactionMessageMetrics = {
