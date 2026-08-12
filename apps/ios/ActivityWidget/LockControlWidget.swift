@@ -4,8 +4,8 @@ import WidgetKit
 import OpenClawKit
 
 struct LockToggleIntent: AppIntent {
-    static var title: LocalizedStringResource = "Переключить блокировку ассистента"
-    static var isDiscoverable = false
+    static let title: LocalizedStringResource = "Переключить блокировку ассистента"
+    static let isDiscoverable = false
 
     @Parameter(title: "Заблокировать") var on: Bool
 
