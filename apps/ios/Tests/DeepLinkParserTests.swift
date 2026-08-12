@@ -224,4 +224,14 @@ private func agentAction(
             token: nil,
             password: nil))
     }
+
+    @Test func parseParsesLockRoute() {
+        let url = URL(string: "openclaw://lock")!
+        #expect(DeepLinkParser.parse(url) == .lock)
+    }
+
+    @Test func parseParsesChatRoute() {
+        let url = URL(string: "openclaw://chat")!
+        #expect(DeepLinkParser.parse(url) == .chat)
+    }
 }

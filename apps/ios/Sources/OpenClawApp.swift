@@ -723,6 +723,9 @@ extension OpenClawApp {
             await self.appModel.handleDeepLink(url: url)
         case let .gateway(link):
             self.appModel.stageGatewaySetupLink(link)
+        case .lock, .chat:
+            // TODO: wire up navigation once the lock-screen widget/chat entry points land.
+            break
         }
     }
 

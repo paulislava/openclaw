@@ -4858,7 +4858,7 @@ extension NodeAppModel {
             await self.handleAgentDeepLink(link, originalURL: url)
         case let .gateway(link):
             self.stageGatewaySetupLink(link)
-        case .dashboard:
+        case .dashboard, .lock, .chat:
             break
         }
     }
