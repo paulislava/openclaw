@@ -59,7 +59,7 @@ struct LockControlView: View {
     }
 
     @ViewBuilder private var codeWord: some View {
-        if let code = self.state?.code, !code.isEmpty {
+        if self.state?.locked == true, let code = self.state?.code, !code.isEmpty {
             VStack(spacing: 4) {
                 Text("Кодовое слово").font(.caption).foregroundStyle(.secondary)
                 Text(code).font(.title3.monospaced().bold()).textSelection(.enabled)
@@ -77,7 +77,7 @@ struct LockControlView: View {
     }
 
     private func toggle(on: Bool) async {
-        guard let client else { return }
+        guard let client else { self.error = "Нет данных gateway"; return }
         self.busy = true; defer { self.busy = false }
         do {
             let st = try await client.set(on: on)
