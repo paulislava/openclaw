@@ -3,6 +3,7 @@
  * live-session routing, and diagnostics.
  */
 import crypto from "node:crypto";
+import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import {
   beginMcpLoopbackToolCallCapture,
   clearMcpLoopbackToolCallCapture,
@@ -60,6 +61,7 @@ import {
   sanitizeToolResult,
 } from "../embedded-agent-subscribe.tools.js";
 import { FailoverError, resolveFailoverStatus } from "../failover-error.js";
+import { resolveFastModeForElapsed } from "../fast-mode.js";
 import { applyPluginTextReplacements } from "../plugin-text-transforms.js";
 import { prepareCliBundleMcpCaptureAttempt } from "./bundle-mcp.js";
 import {
@@ -714,6 +716,31 @@ export async function executePreparedCliRun(
           // Anthropic's separate host-managed usage tier instead of normal CLI
           // subscription behavior.
           delete next["CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"];
+
+          // Bridge OpenClaw's resolved fast-mode into Claude Code's own fast mode
+          // for the claude-cli backend. Claude Code fast mode is opt-out (default-on
+          // for eligible models such as Opus 4.8) and is otherwise invisible to
+          // OpenClaw's /fast + fastModeDefault, which only reached API providers.
+          // Make OpenClaw the source of truth: enabled -> ensure not disabled
+          // (plus the explicit opt-in env older Opus needs); disabled/unset ->
+          // CLAUDE_CODE_DISABLE_FAST_MODE=1. CLAUDE_CODE_* is Claude-namespaced, so
+          // it is inert for non-Claude CLI backends.
+          const fastModeState = resolveFastModeForElapsed({
+            mode: params.fastMode,
+            startedAtMs: params.fastModeStartedAtMs ?? Date.now(),
+            fastAutoOnSeconds: params.fastModeAutoOnSeconds,
+          });
+          const fastModeModelId = normalizeLowercaseStringOrEmpty(
+            context.normalizedModel ?? params.model ?? "",
+          );
+          if (fastModeState.enabled) {
+            delete next["CLAUDE_CODE_DISABLE_FAST_MODE"];
+            if (fastModeModelId.includes("opus-4-7")) {
+              next["CLAUDE_CODE_ENABLE_OPUS_4_7_FAST_MODE"] = "1";
+            }
+          } else {
+            next["CLAUDE_CODE_DISABLE_FAST_MODE"] = "1";
+          }
 
           return next;
         })();
