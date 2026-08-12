@@ -230,9 +230,12 @@ targets:
     dependencies:
       - sdk: WidgetKit.framework
       - sdk: ActivityKit.framework
+      - package: OpenClawKit
+      - sdk: AppIntents.framework
     settings:
       base:
         CODE_SIGN_IDENTITY: "$(OPENCLAW_CODE_SIGN_IDENTITY)"
+        CODE_SIGN_ENTITLEMENTS: ActivityWidget/OpenClawActivityWidget.entitlements
         CODE_SIGN_STYLE: "$(OPENCLAW_CODE_SIGN_STYLE)"
         DEVELOPMENT_TEAM: "$(OPENCLAW_DEVELOPMENT_TEAM)"
         PRODUCT_BUNDLE_IDENTIFIER: "$(OPENCLAW_ACTIVITY_WIDGET_BUNDLE_ID)"
