@@ -71,7 +71,12 @@ final class LockPinningDelegate: NSObject, URLSessionDelegate {
             return
         }
         let systemOk = SecTrustEvaluateWithError(trust, nil)
-        if let expected, let fp = Self.leafFingerprint(trust) {
+        if let expected {
+            guard let fp = Self.leafFingerprint(trust) else {
+                // pin configured but leaf cert unreadable -> fail closed, never downgrade
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
             if fp == expected {
                 completionHandler(.useCredential, URLCredential(trust: trust))
             } else {
