@@ -161,6 +161,7 @@ final class NodeAppModel {
     var lastShareEventText: String = "No share events yet."
     var openChatRequestID: Int = 0
     var gatewaySetupRequestID: Int = 0
+    var showLockControl: Bool = false
     private(set) var pendingAgentDeepLinkPrompt: AgentDeepLinkPrompt?
     private var pendingGatewaySetupLink: GatewayConnectDeepLink?
     private(set) var pendingExecApprovalPrompt: ExecApprovalPrompt?
@@ -4883,7 +4884,12 @@ extension NodeAppModel {
             await self.handleAgentDeepLink(link, originalURL: url)
         case let .gateway(link):
             self.stageGatewaySetupLink(link)
-        case .dashboard, .lock, .chat:
+        case .lock:
+            self.syncLockGatewayConfig()
+            self.showLockControl = true
+        case .chat:
+            self.openChatRequestID &+= 1
+        case .dashboard:
             break
         }
     }

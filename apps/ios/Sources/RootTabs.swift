@@ -660,6 +660,12 @@ struct RootTabs: View {
         }
     }
 
+    private var showLockControlBinding: Binding<Bool> {
+        Binding(
+            get: { self.appModel.showLockControl },
+            set: { self.appModel.showLockControl = $0 })
+    }
+
     private func rootLifecycle(_ content: some View) -> some View {
         self.rootRequestLifecycle(
             self.rootGatewayLifecycle(
@@ -762,6 +768,9 @@ struct RootTabs: View {
             }
             .onChange(of: self.appModel.gatewaySetupRequestID) { _, _ in
                 self.maybeOpenSettingsForGatewaySetup()
+            }
+            .sheet(isPresented: self.showLockControlBinding) {
+                LockControlView()
             }
             .onChange(of: self.appModel.pendingExecApprovalPrompt?.id) { _, newValue in
                 if newValue != self.suppressedExecApprovalPromptIDForNotificationSettings {

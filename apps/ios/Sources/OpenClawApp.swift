@@ -719,13 +719,10 @@ extension OpenClawApp {
         guard let route = DeepLinkParser.parse(url) else { return }
 
         switch route {
-        case .agent, .dashboard:
+        case .agent, .dashboard, .lock, .chat:
             await self.appModel.handleDeepLink(url: url)
         case let .gateway(link):
             self.appModel.stageGatewaySetupLink(link)
-        case .lock, .chat:
-            // TODO: wire up navigation once the lock-screen widget/chat entry points land.
-            break
         }
     }
 
