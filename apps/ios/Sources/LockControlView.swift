@@ -43,9 +43,9 @@ struct LockControlView: View {
     private var buttons: some View {
         HStack(spacing: 16) {
             lockButton(title: "Заблокировать", on: true,
-                       active: self.state?.locked == true, tint: .orange)
+                       active: self.state?.locked == false, tint: .orange)
             lockButton(title: "Снять", on: false,
-                       active: self.state?.locked == false, tint: .green)
+                       active: self.state?.locked == true, tint: .green)
         }
         .disabled(self.busy || self.client == nil)
     }

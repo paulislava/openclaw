@@ -100,13 +100,13 @@ struct LockControlWidgetView: View {
                     title: "Заблокировать",
                     icon: "lock.fill",
                     on: true,
-                    active: self.locked,
+                    active: !self.locked,
                     color: .orange)
                 self.actionButton(
                     title: "Снять",
                     icon: "lock.open.fill",
                     on: false,
-                    active: !self.locked,
+                    active: self.locked,
                     color: .green)
             }
             .controlSize(.regular)
