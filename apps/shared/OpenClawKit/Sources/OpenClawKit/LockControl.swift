@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import UserNotifications
 
 public struct LockState: Codable, Sendable, Equatable {
     public let locked: Bool
@@ -138,5 +139,21 @@ public actor LockGatewayClient {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else { throw LockGatewayError.badResponse(code) }
         return try JSONDecoder().decode(LockState.self, from: data)
+    }
+}
+
+public enum LockNotifier {
+    /// Local phone notification on a successful lock/unlock.
+    public static func notify(locked: Bool, code: String?) {
+        let center = UNUserNotificationCenter.current()
+        let content = UNMutableNotificationContent()
+        content.title = locked ? "🔒 Ассистент заблокирован" : "🔓 Ассистент разблокирован"
+        if locked, let code, !code.isEmpty {
+            content.body = "Кодовое слово: \(code)"
+        }
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString, content: content, trigger: nil)
+        center.add(request)
     }
 }

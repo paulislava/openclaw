@@ -17,6 +17,7 @@ struct LockToggleIntent: AppIntent {
         let client = LockGatewayClient(config: config)
         let state = try await client.set(on: self.on)
         LockSharedStore.saveState(state)
+        LockNotifier.notify(locked: state.locked, code: state.code)
         return .result()
     }
 }

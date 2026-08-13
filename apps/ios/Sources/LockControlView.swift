@@ -1,6 +1,7 @@
 import SwiftUI
 import OpenClawKit
 import WidgetKit
+import UserNotifications
 
 enum WidgetCenterReloader {
     static func reload() {
@@ -28,7 +29,11 @@ struct LockControlView: View {
             }
             .padding()
             .navigationTitle("Блокировка")
-            .task { await self.refresh() }
+            .task {
+                _ = try? await UNUserNotificationCenter.current()
+                    .requestAuthorization(options: [.alert, .sound])
+                await self.refresh()
+            }
         }
     }
 
@@ -73,6 +78,7 @@ struct LockControlView: View {
             let st = try await client.status()
             self.state = st
             LockSharedStore.saveState(st)
+            WidgetCenterReloader.reload()
         } catch { self.error = "Не удалось получить состояние" }
     }
 
@@ -84,6 +90,7 @@ struct LockControlView: View {
             self.state = st
             LockSharedStore.saveState(st)
             WidgetCenterReloader.reload()
+            LockNotifier.notify(locked: st.locked, code: st.code)
         } catch { self.error = "Не удалось переключить" }
     }
 }

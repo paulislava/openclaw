@@ -2120,6 +2120,19 @@ extension NodeAppModel {
             LockGatewayConfig(baseURL: base, token: token, fingerprint: fingerprint))
     }
 
+    /// Обновить закешированное состояние блокировки для виджета из gateway.
+    /// Нужен, чтобы виджет подхватывал актуальное состояние при запуске/переподключении приложения,
+    /// а не только после ручного переключения в интерфейсе.
+    func refreshLockStateForWidget() {
+        guard let config = LockSharedStore.loadConfig() else { return }
+        Task {
+            if let state = try? await LockGatewayClient(config: config).status() {
+                LockSharedStore.saveState(state)
+                WidgetCenterReloader.reload()
+            }
+        }
+    }
+
     func resetGatewaySessionsForForcedReconnect() async {
         let nodeGatewayTask = self.nodeGatewayTask
         let operatorGatewayTask = self.operatorGatewayTask
@@ -3131,6 +3144,7 @@ extension NodeAppModel {
     /// Back-compat hook retained for older gateway-connect flows.
     func onNodeGatewayConnected() async {
         self.syncLockGatewayConfig()
+        self.refreshLockStateForWidget()
         await self.registerAPNsTokenIfNeeded()
         await self.flushQueuedWatchRepliesIfConnected()
         await self.syncWatchAppSnapshot(reason: "node_connected", includeChat: true)
