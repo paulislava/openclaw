@@ -2101,25 +2101,21 @@ extension NodeAppModel {
     }
 
     /// Записать реквизиты текущего gateway в App Group, чтобы виджет мог сам дергать /api/lock.
+    /// Берём данные из активного соединения — работает и для manual, и для discovered (Bonjour).
     func syncLockGatewayConfig() {
-        guard let conn = GatewaySettingsStore.loadLastGatewayConnection() else { return }
-        let host: String
-        let port: Int
-        let useTLS: Bool
-        let stableID: String
-        switch conn {
-        case let .manual(h, p, tls, sid):
-            host = h; port = p; useTLS = tls; stableID = sid
-        case .discovered:
-            // Для discovered-режима нет чистого API резолвинга активного host:port —
-            // откладываем до появления такого геттера (виджет покажет «нет данных»).
-            return
-        }
-        let scheme = useTLS ? "https" : "http"
-        let base = "\(scheme)://\(host):\(port)"
-        let token = GatewaySettingsStore.loadGatewayToken(instanceId: stableID) ?? ""
-        let fingerprint = useTLS ? GatewayTLSStore.loadFingerprint(stableID: stableID) : nil
-        guard !token.isEmpty else { return }
+        guard let cfg = self.activeGatewayConnectConfig,
+              let token = cfg.token, !token.isEmpty
+        else { return }
+        // Derive the HTTP base (same host:port as the WS URL) for /api/lock.
+        guard var comps = URLComponents(url: cfg.url, resolvingAgainstBaseURL: false) else { return }
+        let isTLS = (cfg.url.scheme == "wss" || cfg.url.scheme == "https")
+        comps.scheme = isTLS ? "https" : "http"
+        comps.path = ""
+        comps.query = nil
+        comps.fragment = nil
+        guard let base = comps.string else { return }
+        let fingerprint = cfg.tls?.expectedFingerprint
+            ?? cfg.tls?.storeKey.flatMap { GatewayTLSStore.loadFingerprint(stableID: $0) }
         LockSharedStore.saveConfig(
             LockGatewayConfig(baseURL: base, token: token, fingerprint: fingerprint))
     }
