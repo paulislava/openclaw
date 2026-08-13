@@ -183,6 +183,9 @@ final class NodeAppModel {
     private var lastTalkPermissionReconnectAttemptAt: Date?
     private var voiceWakeSyncTask: Task<Void, Never>?
     private var lockPollTask: Task<Void, Never>?
+    @ObservationIgnored private var lockEventsTask: Task<Void, Never>?
+    /// Единый источник правды состояния блокировки для UI (экран + виджет).
+    var lockState: LockState?
     @ObservationIgnored private var cameraHUDDismissTask: Task<Void, Never>?
     @ObservationIgnored private lazy var capabilityRouter: NodeCapabilityRouter = self.buildCapabilityRouter()
     private let gatewayHealthMonitor = GatewayHealthMonitor()
@@ -2126,10 +2129,9 @@ extension NodeAppModel {
     /// а не только после ручного переключения в интерфейсе.
     func refreshLockStateForWidget() {
         guard let config = LockSharedStore.loadConfig() else { return }
-        Task {
+        Task { [weak self] in
             if let state = try? await LockGatewayClient(config: config).status() {
-                LockSharedStore.saveState(state)
-                WidgetCenterReloader.reload()
+                await MainActor.run { self?.applyLockState(state) }
             }
         }
     }
@@ -2153,14 +2155,49 @@ extension NodeAppModel {
         self.lockPollTask = nil
     }
 
+    /// Применяет новое состояние блокировки к единому источнику правды: обновляет observable
+    /// `lockState`, кеш App Group и перерисовывает виджет — только при фактическом изменении.
+    private func applyLockState(_ state: LockState) {
+        let previous = self.lockState
+        guard previous?.locked != state.locked || previous?.code != state.code else { return }
+        self.lockState = state
+        LockSharedStore.saveState(state)
+        WidgetCenterReloader.reload()
+    }
+
     private func pollLockStateOnce() async {
         guard let config = LockSharedStore.loadConfig() else { return }
         guard let state = try? await LockGatewayClient(config: config).status() else { return }
-        let previous = LockSharedStore.loadState()
-        if previous?.locked != state.locked || previous?.code != state.code {
-            LockSharedStore.saveState(state)
-            WidgetCenterReloader.reload()
+        self.applyLockState(state)
+    }
+
+    /// Живая подписка на SSE-события gateway: держит `lockState` и виджет всегда актуальными.
+    /// Авто-переподключение с бэкоффом 3с; 20-секундный поллинг остаётся дешёвым фолбэком.
+    func startLockEventsSubscription() {
+        self.lockEventsTask?.cancel()
+        self.lockEventsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let config = LockSharedStore.loadConfig() else {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    continue
+                }
+                do {
+                    for try await state in LockGatewayClient(config: config).events() {
+                        guard let self else { return }
+                        await MainActor.run { self.applyLockState(state) }
+                    }
+                } catch {
+                    // Обрыв соединения — переподключаемся ниже.
+                }
+                if Task.isCancelled { break }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
         }
+    }
+
+    func stopLockEventsSubscription() {
+        self.lockEventsTask?.cancel()
+        self.lockEventsTask = nil
     }
 
     func resetGatewaySessionsForForcedReconnect() async {
@@ -2208,6 +2245,7 @@ extension NodeAppModel {
         self.voiceWakeSyncTask?.cancel()
         self.voiceWakeSyncTask = nil
         self.stopLockStatePolling()
+        self.stopLockEventsSubscription()
         LiveActivityManager.shared.endActivity(reason: "manual_disconnect")
         self.gatewayHealthMonitor.stop()
         Task {
@@ -2249,6 +2287,7 @@ extension NodeAppModel {
         self.voiceWakeSyncTask?.cancel()
         self.voiceWakeSyncTask = nil
         self.stopLockStatePolling()
+        self.stopLockEventsSubscription()
         LiveActivityManager.shared.endActivity(reason: "new_gateway_connect")
         self.gatewayDefaultAgentId = nil
         self.gatewayAgents = []
@@ -2998,6 +3037,7 @@ extension NodeAppModel {
         self.voiceWakeSyncTask?.cancel()
         self.voiceWakeSyncTask = nil
         self.stopLockStatePolling()
+        self.stopLockEventsSubscription()
         self.gatewayHealthMonitor.stop()
         LiveActivityManager.shared.endActivity(reason: "apple_review_demo")
 
@@ -3043,6 +3083,7 @@ extension NodeAppModel {
         self.voiceWakeSyncTask?.cancel()
         self.voiceWakeSyncTask = nil
         self.stopLockStatePolling()
+        self.stopLockEventsSubscription()
         self.gatewayHealthMonitor.stop()
         LiveActivityManager.shared.endActivity(reason: "screenshot_fixture")
 
@@ -3180,6 +3221,7 @@ extension NodeAppModel {
         self.syncLockGatewayConfig()
         self.refreshLockStateForWidget()
         self.startLockStatePolling()
+        self.startLockEventsSubscription()
         await self.registerAPNsTokenIfNeeded()
         await self.flushQueuedWatchRepliesIfConnected()
         await self.syncWatchAppSnapshot(reason: "node_connected", includeChat: true)

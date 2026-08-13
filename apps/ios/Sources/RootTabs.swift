@@ -771,6 +771,7 @@ struct RootTabs: View {
             }
             .sheet(isPresented: self.showLockControlBinding) {
                 LockControlView()
+                    .environment(self.appModel)
             }
             .onChange(of: self.appModel.pendingExecApprovalPrompt?.id) { _, newValue in
                 if newValue != self.suppressedExecApprovalPromptIDForNotificationSettings {

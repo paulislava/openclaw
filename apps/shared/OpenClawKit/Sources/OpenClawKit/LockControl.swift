@@ -123,6 +123,54 @@ public actor LockGatewayClient {
         try await self.send(method: "POST", body: ["action": on ? "on" : "off"])
     }
 
+    /// Actor-isolated worker: opens the SSE connection and yields each parsed LockState.
+    fileprivate func streamEvents(
+        _ continuation: AsyncThrowingStream<LockState, Error>.Continuation) async
+    {
+        guard let url = URL(string: self.config.baseURL.hasSuffix("/")
+            ? self.config.baseURL + "api/lock/events"
+            : self.config.baseURL + "/api/lock/events")
+        else {
+            continuation.finish(throwing: LockGatewayError.invalidURL)
+            return
+        }
+        // Dedicated long-lived session: heartbeats (~20s) must not trip a 12s request timeout.
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 65
+        cfg.timeoutIntervalForResource = TimeInterval(Int.max)
+        let eventsSession = URLSession(
+            configuration: cfg,
+            delegate: LockPinningDelegate(expectedFingerprint: self.config.fingerprint),
+            delegateQueue: nil)
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(self.config.token)", forHTTPHeaderField: "Authorization")
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        do {
+            let (bytes, resp) = try await eventsSession.bytes(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200 else {
+                eventsSession.invalidateAndCancel()
+                continuation.finish(throwing: LockGatewayError.badResponse(code))
+                return
+            }
+            let decoder = JSONDecoder()
+            for try await line in bytes.lines {
+                guard line.hasPrefix("data:") else { continue }
+                let payload = line.dropFirst("data:".count)
+                    .trimmingCharacters(in: .whitespaces)
+                guard let data = payload.data(using: .utf8),
+                      let state = try? decoder.decode(LockState.self, from: data)
+                else { continue }
+                continuation.yield(state)
+            }
+            eventsSession.invalidateAndCancel()
+            continuation.finish()
+        } catch {
+            eventsSession.invalidateAndCancel()
+            continuation.finish(throwing: error)
+        }
+    }
+
     private func send(method: String, body: [String: String]?) async throws -> LockState {
         guard let url = URL(string: self.config.baseURL.hasSuffix("/")
             ? self.config.baseURL + "api/lock"
@@ -139,6 +187,16 @@ public actor LockGatewayClient {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else { throw LockGatewayError.badResponse(code) }
         return try JSONDecoder().decode(LockState.self, from: data)
+    }
+}
+
+public extension LockGatewayClient {
+    /// Live lock-state events from the gateway SSE endpoint. Ends on error/cancel; caller reconnects.
+    nonisolated func events() -> AsyncThrowingStream<LockState, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task { await self.streamEvents(continuation) }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 }
 

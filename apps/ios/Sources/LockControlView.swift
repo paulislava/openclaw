@@ -10,12 +10,17 @@ enum WidgetCenterReloader {
 }
 
 struct LockControlView: View {
-    @State private var state: LockState?
+    @Environment(NodeAppModel.self) private var appModel
     @State private var busy = false
     @State private var error: String?
 
     private var client: LockGatewayClient? {
         LockSharedStore.loadConfig().map(LockGatewayClient.init(config:))
+    }
+
+    /// Живое состояние из общего источника; при первом показе — мгновенно из кеша App Group.
+    private var state: LockState? {
+        self.appModel.lockState ?? LockSharedStore.loadState()
     }
 
     var body: some View {
@@ -24,6 +29,10 @@ struct LockControlView: View {
                 statusBadge
                 buttons
                 codeWord
+                if self.client == nil, self.state == nil {
+                    Text("Нет данных gateway — откройте приложение при подключении")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
                 Spacer()
             }
@@ -32,7 +41,6 @@ struct LockControlView: View {
             .task {
                 _ = try? await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .sound])
-                await self.refresh()
             }
         }
     }
@@ -72,22 +80,13 @@ struct LockControlView: View {
         }
     }
 
-    private func refresh() async {
-        guard let client else { self.error = "Нет данных gateway — откройте приложение при подключении"; return }
-        do {
-            let st = try await client.status()
-            self.state = st
-            LockSharedStore.saveState(st)
-            WidgetCenterReloader.reload()
-        } catch { self.error = "Не удалось получить состояние" }
-    }
-
     private func toggle(on: Bool) async {
         guard let client else { self.error = "Нет данных gateway"; return }
         self.busy = true; defer { self.busy = false }
         do {
             let st = try await client.set(on: on)
-            self.state = st
+            // Немедленно обновляем общий источник для отзывчивости (SSE тоже пришлёт это же).
+            self.appModel.lockState = st
             LockSharedStore.saveState(st)
             WidgetCenterReloader.reload()
             LockNotifier.notify(locked: st.locked, code: st.code)
