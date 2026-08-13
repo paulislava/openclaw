@@ -106,3 +106,71 @@ export async function handleLockHttpRequest(
     return true;
   }
 }
+
+export async function handleLockEventsHttpRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  opts: {
+    auth: ResolvedGatewayAuth;
+    trustedProxies?: string[];
+    allowRealIpFallback?: boolean;
+    rateLimiter?: AuthRateLimiter;
+  },
+): Promise<boolean> {
+  const cfg = getRuntimeConfig();
+  const requestAuth = await authorizeGatewayHttpRequestOrReply({
+    req,
+    res,
+    auth: opts.auth,
+    trustedProxies: opts.trustedProxies ?? cfg.gateway?.trustedProxies,
+    allowRealIpFallback: opts.allowRealIpFallback ?? cfg.gateway?.allowRealIpFallback,
+    rateLimiter: opts.rateLimiter,
+  });
+  if (!requestAuth) return true; // 401 уже записан
+
+  const token = process.env.ASSISTANT_LOCK_TOKEN || "";
+  const controller = new AbortController();
+  req.on("close", () => controller.abort());
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${flaskBase()}/api/lock/events`, {
+      headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" },
+      signal: controller.signal,
+    });
+  } catch {
+    if (!res.headersSent) {
+      res.writeHead(502, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "lock events backend unreachable" }));
+    }
+    return true;
+  }
+  if (!upstream.ok || !upstream.body) {
+    res.writeHead(upstream.status || 502, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "lock events upstream error" }));
+    return true;
+  }
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+    "x-accel-buffering": "no",
+  });
+  const reader = upstream.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) res.write(Buffer.from(value));
+    }
+  } catch {
+    // клиент или апстрим закрыли соединение
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      /* ignore */
+    }
+    res.end();
+  }
+  return true;
+}

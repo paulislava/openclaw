@@ -243,6 +243,10 @@ function isLockPath(pathname: string): boolean {
   return pathname === "/api/lock";
 }
 
+function isLockEventsPath(pathname: string): boolean {
+  return pathname === "/api/lock/events";
+}
+
 function shouldEnforceDefaultPluginGatewayAuth(pathContext: PluginRoutePathContext): boolean {
   return (
     pathContext.malformedEncoding ||
@@ -680,6 +684,18 @@ export function createGatewayHttpServer(opts: {
           name: "lock",
           run: async () =>
             (await getLockHttpModule()).handleLockHttpRequest(req, res, {
+              auth: resolvedAuthValue,
+              trustedProxies,
+              allowRealIpFallback,
+              rateLimiter,
+            }),
+        });
+      }
+      if (isLockEventsPath(scopedRequestPath)) {
+        requestStages.push({
+          name: "lock-events",
+          run: async () =>
+            (await getLockHttpModule()).handleLockEventsHttpRequest(req, res, {
               auth: resolvedAuthValue,
               trustedProxies,
               allowRealIpFallback,
