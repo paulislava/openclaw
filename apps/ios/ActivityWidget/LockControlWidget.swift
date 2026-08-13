@@ -41,40 +41,100 @@ struct LockProvider: TimelineProvider {
 
 struct LockControlWidgetView: View {
     let entry: LockEntry
-    private var locked: Bool { entry.state?.locked ?? false }
+    private var locked: Bool {
+        self.entry.state?.locked ?? false
+    }
+
+    private var accent: Color {
+        self.locked ? .orange : .green
+    }
 
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(locked ? "Заблокировано" : "Открыто",
-                      systemImage: locked ? "lock.fill" : "lock.open.fill")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(locked ? .orange : .green)
-                if let code = entry.state?.code, !code.isEmpty, locked {
-                    Text("Код: \(code)").font(.caption.monospaced())
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 11) {
+                ZStack {
+                    Circle().fill(self.accent.opacity(0.18))
+                    Image(systemName: self.locked ? "lock.fill" : "lock.open.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(self.accent)
+                }
+                .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Ассистент")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
+                    Text(self.locked ? "Заблокирован" : "Открыт")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.primary)
                 }
+                Spacer(minLength: 4)
                 Link(destination: URL(string: "openclaw://chat")!) {
-                    Label("Чат", systemImage: "bubble.left.and.bubble.right")
-                        .font(.caption)
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, height: 34)
+                        .background(Color.primary.opacity(0.08), in: Circle())
                 }
             }
-            Spacer()
-            VStack(spacing: 8) {
-                Button(intent: LockToggleIntent(on: true)) {
-                    Text("Заблокировать").font(.caption.bold()).frame(maxWidth: .infinity)
+
+            if self.locked, let code = entry.state?.code, !code.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "key.fill")
+                        .font(.caption2)
+                        .foregroundStyle(self.accent)
+                    Text(code)
+                        .font(.subheadline.weight(.semibold).monospaced())
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 0)
                 }
-                .tint(locked ? .orange : .gray)
-                Button(intent: LockToggleIntent(on: false)) {
-                    Text("Снять").font(.caption.bold()).frame(maxWidth: .infinity)
-                }
-                .tint(locked ? .gray : .green)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(self.accent.opacity(0.14), in: Capsule())
+            } else {
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.borderedProminent)
-            .frame(width: 130)
+
+            HStack(spacing: 9) {
+                self.actionButton(
+                    title: "Заблокировать",
+                    icon: "lock.fill",
+                    on: true,
+                    active: self.locked,
+                    color: .orange)
+                self.actionButton(
+                    title: "Снять",
+                    icon: "lock.open.fill",
+                    on: false,
+                    active: !self.locked,
+                    color: .green)
+            }
+            .controlSize(.regular)
         }
-        .padding()
+        .padding(14)
         .widgetURL(URL(string: "openclaw://lock"))
+    }
+
+    @ViewBuilder
+    private func actionButton(
+        title: String,
+        icon: String,
+        on: Bool,
+        active: Bool,
+        color: Color) -> some View
+    {
+        let button = Button(intent: LockToggleIntent(on: on)) {
+            Label(title, systemImage: icon)
+                .font(.footnote.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity)
+        }
+        if active {
+            button.buttonStyle(.borderedProminent).tint(color)
+        } else {
+            button.buttonStyle(.bordered).tint(.gray)
+        }
     }
 }
 
