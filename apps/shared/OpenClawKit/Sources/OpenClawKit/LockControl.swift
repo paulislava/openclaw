@@ -26,7 +26,7 @@ public enum LockSharedStore {
     private static let configKey = "lock.gateway.config"
     private static let stateKey = "lock.state"
 
-    private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroupID) }
+    private static var defaults: UserDefaults? { UserDefaults(suiteName: OpenClawAppGroup.identifier) }
 
     public static func saveConfig(_ config: LockGatewayConfig) {
         guard let data = try? JSONEncoder().encode(config) else { return }

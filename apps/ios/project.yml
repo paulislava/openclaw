@@ -249,6 +249,7 @@ targets:
       properties:
         CFBundleDisplayName: OpenClaw Activity
         CFBundleShortVersionString: "$(OPENCLAW_MARKETING_VERSION)"
+        OpenClawAppGroupIdentifier: "$(OPENCLAW_APP_GROUP_ID)"
         CFBundleVersion: "$(OPENCLAW_BUILD_VERSION)"
         NSSupportsLiveActivities: true
         NSExtension:
