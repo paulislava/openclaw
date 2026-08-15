@@ -82,6 +82,7 @@ let sessionHistoryHttpModulePromise:
   | Promise<typeof import("./sessions-history-http.js")>
   | undefined;
 let sessionKillHttpModulePromise: Promise<typeof import("./session-kill-http.js")> | undefined;
+let lockHttpModulePromise: Promise<typeof import("./lock-http.js")> | undefined;
 let toolsInvokeHttpModulePromise: Promise<typeof import("./tools-invoke-http.js")> | undefined;
 let pluginNodeCapabilityAuthModulePromise:
   | Promise<typeof import("./server/plugin-node-capability-auth.js")>
@@ -134,6 +135,11 @@ function getSessionHistoryHttpModule() {
 function getSessionKillHttpModule() {
   sessionKillHttpModulePromise ??= import("./session-kill-http.js");
   return sessionKillHttpModulePromise;
+}
+
+function getLockHttpModule() {
+  lockHttpModulePromise ??= import("./lock-http.js");
+  return lockHttpModulePromise;
 }
 
 function getToolsInvokeHttpModule() {
@@ -231,6 +237,14 @@ function isSessionKillPath(pathname: string): boolean {
 
 function isSessionHistoryPath(pathname: string): boolean {
   return /^\/sessions\/[^/]+\/history$/.test(pathname);
+}
+
+function isLockPath(pathname: string): boolean {
+  return pathname === "/api/lock";
+}
+
+function isLockEventsPath(pathname: string): boolean {
+  return pathname === "/api/lock/events";
 }
 
 function shouldEnforceDefaultPluginGatewayAuth(pathContext: PluginRoutePathContext): boolean {
@@ -659,6 +673,30 @@ export function createGatewayHttpServer(opts: {
             (await getSessionHistoryHttpModule()).handleSessionHistoryHttpRequest(req, res, {
               auth: resolvedAuthValue,
               getResolvedAuth,
+              trustedProxies,
+              allowRealIpFallback,
+              rateLimiter,
+            }),
+        });
+      }
+      if (isLockPath(scopedRequestPath)) {
+        requestStages.push({
+          name: "lock",
+          run: async () =>
+            (await getLockHttpModule()).handleLockHttpRequest(req, res, {
+              auth: resolvedAuthValue,
+              trustedProxies,
+              allowRealIpFallback,
+              rateLimiter,
+            }),
+        });
+      }
+      if (isLockEventsPath(scopedRequestPath)) {
+        requestStages.push({
+          name: "lock-events",
+          run: async () =>
+            (await getLockHttpModule()).handleLockEventsHttpRequest(req, res, {
+              auth: resolvedAuthValue,
               trustedProxies,
               allowRealIpFallback,
               rateLimiter,

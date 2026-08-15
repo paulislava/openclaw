@@ -74,6 +74,9 @@ final class DeepLinkHandler {
                 self.presentAlert(title: "OpenClaw is paused", message: "Unpause OpenClaw to run agent actions.")
                 return
             }
+        case .lock, .chat:
+            // Not applicable on macOS; handled by iOS lock-screen widget routes.
+            break
         }
     }
 

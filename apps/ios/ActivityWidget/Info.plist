@@ -27,5 +27,7 @@
 	</dict>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>OpenClawAppGroupIdentifier</key>
+	<string>$(OPENCLAW_APP_GROUP_ID)</string>
 </dict>
 </plist>

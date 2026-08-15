@@ -4,6 +4,8 @@ public enum DeepLinkRoute: Sendable, Equatable {
     case agent(AgentDeepLink)
     case gateway(GatewayConnectDeepLink)
     case dashboard
+    case lock
+    case chat
 }
 
 public struct GatewayConnectDeepLink: Codable, Sendable, Equatable {
@@ -269,6 +271,12 @@ public enum DeepLinkParser {
 
         case "dashboard":
             return .dashboard
+
+        case "lock":
+            return .lock
+
+        case "chat":
+            return .chat
 
         default:
             return nil
