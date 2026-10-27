@@ -41,9 +41,9 @@ export function resolveUsageProviderId(
     return undefined;
   }
   const normalized = normalizeProviderId(provider);
-  if (normalized === "openai") {
+  if (normalized === "openai" || normalized === "codex") {
     return options?.credentialType === "oauth" || options?.credentialType === "token"
-      ? normalized
+      ? "openai"
       : undefined;
   }
   // Claude CLI-backed models bill against the same Anthropic subscription as

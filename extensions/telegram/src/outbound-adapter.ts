@@ -42,6 +42,8 @@ type ResolveTelegramSendFn = (deps?: OutboundSendDeps) => Promise<TelegramSendFn
 type LoadTelegramSendModuleFn = () => Promise<TelegramSendModule>;
 
 type TelegramPayloadData = {
+  foursquareId?: string;
+  googlePlaceId?: string;
   buttons?: TelegramInlineButtons;
   quoteText?: string;
   reaction?: { emoji?: unknown; replyToId?: unknown; replyToCurrent?: unknown };
@@ -243,6 +245,8 @@ export async function sendTelegramPayloadMessages(params: {
     }
     return await params.sendLocation(params.to, payload.location, {
       ...params.baseOpts,
+      foursquareId: telegramData?.foursquareId,
+      googlePlaceId: telegramData?.googlePlaceId,
       ...projectionOptions,
       buttons,
       quoteText,

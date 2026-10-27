@@ -18,6 +18,21 @@ import type { ReplyPayload } from "../types.js";
 import { loadUsageBarTemplate } from "../usage-bar/template.js";
 import { renderUsageBar, type UsageContract } from "../usage-bar/translator.js";
 
+function formatResetRemaining(targetMs?: number): string | undefined {
+  if (targetMs === undefined) {
+    return undefined;
+  }
+  const minutes = Math.max(0, Math.floor((targetMs - Date.now()) / 60_000));
+  if (minutes < 60) {
+    return ` ⏱${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return ` ⏱${hours}h${minutes % 60 ? `${String(minutes % 60).padStart(2, "0")}m` : ""}`;
+  }
+  return ` ⏱${Math.floor(hours / 24)}d${hours % 24 ? `${hours % 24}h` : ""}`;
+}
+
 function projectUsage(usage: NonNullable<PluginHookReplyUsageState["usage"]>) {
   const promptTotal = (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0) + (usage.input ?? 0);
   return {
@@ -37,10 +52,10 @@ function projectUsage(usage: NonNullable<PluginHookReplyUsageState["usage"]>) {
 function buildUsageContract(state: PluginHookReplyUsageState, surface?: string): UsageContract {
   const usage = state.usage ?? {};
   const { input, output, cacheRead, cacheWrite, total } = usage;
-  const hasSplitTokens = input !== undefined || output !== undefined;
-  const hasTotalOnlyTokens = !hasSplitTokens && total !== undefined;
+  const hasSplitTokens = (input ?? 0) > 0 || (output ?? 0) > 0;
+  const hasTotalOnlyTokens = !hasSplitTokens && (total ?? 0) > 0;
   const hasTokens =
-    hasSplitTokens || cacheRead !== undefined || cacheWrite !== undefined || total !== undefined;
+    hasSplitTokens || (cacheRead ?? 0) > 0 || (cacheWrite ?? 0) > 0 || (total ?? 0) > 0;
 
   const { promptTotal, tokens } = projectUsage(usage);
   const last = state.lastUsage;
@@ -92,8 +107,20 @@ function buildUsageContract(state: PluginHookReplyUsageState, surface?: string):
     },
     context: {
       used_tokens: usedTokens,
+      remaining_tokens:
+        maxTokens && usedTokens !== undefined ? Math.max(0, maxTokens - usedTokens) : undefined,
       max_tokens: maxTokens,
       pct_used: pctUsed,
+    },
+    workspace: { cwd: state.cwd, current_dir: state.cwd?.replace(/\/+$/, "").split("/").pop() },
+    limits: {
+      windows: state.providerUsageWindows?.map((window) => ({
+        label: window.label,
+        used_pct: window.usedPercent,
+        remaining_pct: Math.max(0, Math.min(100, 100 - window.usedPercent)),
+        reset_at: window.resetAt,
+        reset_label: formatResetRemaining(window.resetAt),
+      })),
     },
     cost: {
       turn_usd: state.turnUsd ?? null,
@@ -163,7 +190,7 @@ export const resolveResponseUsageLine = (params: {
   );
   const showCost = responseUsageMode === "full";
   const hasUsage = showCost ? hasBillableUsage(params.usage) : hasNonzeroUsage(params.usage);
-  if (responseUsageMode === "off" || !hasUsage || params.preserveUserFacingSessionState === true) {
+  if (responseUsageMode === "off" || params.preserveUserFacingSessionState === true) {
     return undefined;
   }
 
@@ -185,7 +212,8 @@ export const resolveResponseUsageLine = (params: {
       ? renderUsageBar(usageTemplate, buildUsageContract(params.replyUsageState, params.channel))
       : undefined;
 
-  return rendered || formatted || undefined;
+  // Native CLI runs may expose plan/context metadata without token counters.
+  return rendered || (hasUsage ? formatted : undefined) || undefined;
 };
 
 export const appendUsageLine = (

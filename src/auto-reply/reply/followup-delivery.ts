@@ -28,6 +28,7 @@ import {
   isReplyPayloadTerminalContent,
   markReplyPayloadForSourceSuppressionDelivery,
   selectAutomationReplyPayloads,
+  setReplyPayloadMetadata,
 } from "../reply-payload.js";
 import type { ReplyPayload } from "../types.js";
 import {
@@ -380,6 +381,7 @@ export async function resolveFollowupDeliveryDecision(params: {
         text: responseUsageLine,
         isStatusNotice: true,
       });
+      setReplyPayloadMetadata(sourceUsageFooter, { responseUsageLine });
     } else {
       payloads = appendUsageLine(payloads, responseUsageLine);
     }

@@ -1,4 +1,10 @@
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
+import { readClaudeCliUsageCredential } from "./cli-usage-credentials.js";
+// mock-isolation: usage auth never reads the developer login; native source parsing has its own suite.
+vi.mock("./cli-usage-credentials.js", () => ({ readClaudeCliUsageCredential: vi.fn() }));
+beforeEach(() => {
+  vi.mocked(readClaudeCliUsageCredential).mockReset();
+});
 import { fetchAnthropicUsage, resolveAnthropicUsageAuth } from "./usage.js";
 
 const requestUrl = (input: string | URL | Request) =>
@@ -113,6 +119,19 @@ it("prefers a stored Admin API key when normal API and OAuth credentials coexist
   expect(result).toEqual({
     token: 'openclaw:anthropic-admin:v1:{"token":"sk-ant-admin-billing"}',
   });
+});
+
+it("uses a fresh native access token for quota without refreshing its login", async () => {
+  vi.mocked(readClaudeCliUsageCredential).mockResolvedValue({
+    token: "native-usage-access",
+    subscriptionType: "max",
+  });
+  const resolveOAuthToken = vi.fn(async () => null);
+  expect(await resolveAuth({ resolveOAuthToken })).toEqual({
+    token: "native-usage-access",
+    subscriptionType: "max",
+  });
+  expect(resolveOAuthToken).toHaveBeenCalledWith({ excludeProfileIds: ["anthropic:claude-cli"] });
 });
 
 it("does not refresh the native Claude login for usage polling", async () => {

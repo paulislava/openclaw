@@ -1,4 +1,5 @@
 import {
+  resolveAgentDir,
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
 } from "../../agents/agent-scope-config.js";
@@ -8,6 +9,10 @@ import {
   type ReplyPayload,
   formatBtwTextForExternalDelivery,
 } from "../../auto-reply/reply-payload.js";
+import {
+  appendUsageLine,
+  resolveResponseUsageLine,
+} from "../../auto-reply/reply/agent-runner-usage-line.js";
 import {
   normalizeReplyPayloadOutcome,
   type NormalizeReplyOutcome,
@@ -525,8 +530,21 @@ export async function deliverAgentCommandResult(
     mediaNormalization.payloads,
     mediaNormalization.normalizeMediaPaths,
   );
+  const responseUsageLine = resolveResponseUsageLine({
+    config: cfg,
+    agentDir: resolveAgentDir(cfg, deliveryAgentId),
+    sessionRaw: sessionEntry?.responseUsage,
+    channel: deliveryChannel,
+    usage: result.meta.agentMeta?.usage,
+    provider: result.meta.agentMeta?.provider,
+    model: result.meta.agentMeta?.model,
+  });
+  const replyPayloadsWithUsage =
+    responseUsageLine && !suppressAutomaticDelivery && mediaNormalizedReplyPayloads.length > 0
+      ? appendUsageLine(mediaNormalizedReplyPayloads, responseUsageLine)
+      : mediaNormalizedReplyPayloads;
   params.assertDeliveryCurrent?.();
-  const outboundPayloadPlan = createOutboundPayloadPlan(mediaNormalizedReplyPayloads);
+  const outboundPayloadPlan = createOutboundPayloadPlan(replyPayloadsWithUsage);
   const normalizedPayloads = projectOutboundPayloadPlanForJson(outboundPayloadPlan);
   const completeDelivery = (
     status?: AgentCommandDeliveryStatus,

@@ -3,6 +3,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
+import { getChannelAgentToolMeta } from "./channel-tool-metadata.js";
 import {
   resolveConversationCapabilityProfile,
   type ResolvedConversationCapabilityProfile,
@@ -71,7 +72,14 @@ export function createEmbeddedMessageInvocationPolicy(params: {
     const { tools, declaredToolAllowlist, unavailableCoreToolReason } = params.catalog();
     return applyToolPolicyPipeline({
       tools,
-      toolMeta: (tool) => getPluginToolMeta(tool),
+      toolMeta: (tool) => {
+        const plugin = getPluginToolMeta(tool);
+        if (plugin) {
+          return plugin;
+        }
+        const channel = getChannelAgentToolMeta(tool);
+        return channel ? { pluginId: `channel:${channel.channelId}` } : undefined;
+      },
       warn: logWarn,
       steps: buildConversationToolPolicyPipelineSteps({
         capabilityProfile: currentProfile,

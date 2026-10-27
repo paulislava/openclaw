@@ -35,11 +35,16 @@ export function shouldDeliverDespiteSourceReplySuppression(
   payload: ReplyPayload,
   state: SourceReplySuppressionState,
 ): boolean {
+  const metadata = getReplyPayloadMetadata(payload);
+  const isUsageFooter =
+    isReplyPayloadStatusNotice(payload) &&
+    typeof metadata?.responseUsageLine === "string" &&
+    payload.text === metadata.responseUsageLine;
   return (
     state.suppressAutomaticSourceDelivery &&
     !state.sendPolicyDenied &&
-    getReplyPayloadMetadata(payload)?.deliverDespiteSourceReplySuppression === true &&
-    (state.ctx.InboundEventKind !== "room_event" || state.explicitCommandTurnCtx)
+    metadata?.deliverDespiteSourceReplySuppression === true &&
+    (state.ctx.InboundEventKind !== "room_event" || state.explicitCommandTurnCtx || isUsageFooter)
   );
 }
 

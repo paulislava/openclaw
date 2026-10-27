@@ -478,6 +478,9 @@ export type PluginHookReplyUsageState = {
   turnUsd?: number;
   /** Wall-clock duration of the turn in milliseconds. */
   durationMs?: number;
+  /** Runtime working directory and subscription quota windows for response footers. */
+  cwd?: string;
+  providerUsageWindows?: Array<{ label: string; usedPercent: number; resetAt?: number }>;
   /** Owning agent's configured identity (name/emoji/avatar), when set. */
   identity?: { name?: string; emoji?: string; avatar?: string };
   compactionCount?: number;

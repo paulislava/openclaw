@@ -3,8 +3,13 @@ import { runMessageActionDiscoveryAsync } from "../channels/plugins/message-acti
 import type { ChannelPlugin } from "../channels/plugins/types.public.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { defaultRuntime } from "../runtime.js";
+import { loadBundledPluginFacade } from "../test-utils/bundled-plugin-public-surface.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
-import { listChannelSupportedActionsSteps } from "./channel-tools.js";
+import {
+  getChannelAgentToolMeta,
+  listChannelAgentTools,
+  listChannelSupportedActionsSteps,
+} from "./channel-tools.js";
 
 const EMPTY_PREPARED_MESSAGE_TOOL_CATALOG = {
   version: 0,
@@ -37,6 +42,37 @@ function discover(
 describe("channel tools", () => {
   afterEach(() => {
     setActivePluginRegistry(createTestRegistry([]));
+  });
+
+  it("discovers the registered Telegram tools while retaining the native send gate", async () => {
+    const { telegramPlugin } = await loadBundledPluginFacade<{ telegramPlugin: ChannelPlugin }>({
+      pluginId: "telegram",
+      artifactBasename: "api.js",
+    });
+    setActivePluginRegistry(
+      createTestRegistry([{ pluginId: "telegram", source: "test", plugin: telegramPlugin }]),
+    );
+    const tools = listChannelAgentTools({
+      cfg: { channels: { telegram: { botToken: "123:test", actions: { sendMessage: false } } } },
+    });
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "telegram_send_location",
+      "telegram_send_venue",
+      "telegram_send_video_note",
+    ]);
+    for (const tool of tools) {
+      expect(getChannelAgentToolMeta(tool)).toEqual({ channelId: "telegram" });
+      await expect(
+        tool.execute("disabled-send", {
+          to: "123",
+          latitude: 1,
+          longitude: 2,
+          title: "Venue",
+          address: "Address",
+          mediaUrl: "https://example.test/video.mp4",
+        }),
+      ).rejects.toThrow("Telegram sendMessage is disabled");
+    }
   });
 
   it("keeps an explicitly empty prepared catalog authoritative", async () => {

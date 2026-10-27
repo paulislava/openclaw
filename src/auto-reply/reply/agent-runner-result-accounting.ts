@@ -27,7 +27,11 @@ import type { FollowupExecutionResult } from "./followup-turn-execution.js";
 import { drainPendingToolTasks } from "./pending-tool-task-drain.js";
 import { refreshQueuedFollowupSession } from "./queue.js";
 import type { AdmittedFollowupTurn, FollowupRunnerParams } from "./reply-agent-turn-preparation.js";
-import { buildReplyUsageState, recordReplyUsageState } from "./reply-usage-state.js";
+import {
+  buildReplyUsageState,
+  recordReplyUsageState,
+  resolveReplyProviderUsageWindows,
+} from "./reply-usage-state.js";
 import { incrementCompactionCount } from "./session-updates.js";
 import { prepareSessionUsageUpdate } from "./session-usage.js";
 
@@ -182,6 +186,18 @@ export async function accountAgentTurn(context: AgentTurnAccountingContext) {
   const ctxTokens = runResult.meta?.agentMeta?.contextTokens;
   const compactions = runResult.meta?.agentMeta?.compactionCount;
   const lastCallUsage = runResult.meta?.agentMeta?.lastCallUsage;
+  const providerUsageWindows = await resolveReplyProviderUsageWindows({
+    config: cfg,
+    provider: providerUsed,
+    model: modelUsed,
+    authMode: runResult.meta?.requestShaping?.authMode,
+    harnessId: runResult.meta?.agentMeta?.agentHarnessId,
+    agentId: followupRun.run.agentId,
+    sessionKey: followupRun.run.sessionKey,
+    authProfileId: followupRun.run.authProfileId,
+    agentDir: followupRun.run.agentDir,
+    workspaceDir: followupRun.run.workspaceDir,
+  });
   const replyUsageState = buildReplyUsageState({
     config: cfg,
     agentDir: followupRun.run.agentDir,
@@ -211,6 +227,8 @@ export async function accountAgentTurn(context: AgentTurnAccountingContext) {
     contextTokenBudget: ctxTokens,
     contextUsedTokens: promptTokens,
     promptTokens,
+    cwd: followupRun.run.cwd ?? followupRun.run.workspaceDir,
+    providerUsageWindows,
     usage,
     lastCallUsage,
   });

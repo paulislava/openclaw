@@ -224,7 +224,10 @@ export function createSkillWorkshopTool(options: SkillWorkshopToolOptions): AnyA
       );
       return textResult(
         `Saved draft ${savedId} for "${name}". Skills are unchanged; the user reviews drafts with /learn drafts.`,
-        { draft: savedId },
+        {
+          draft: savedId,
+          proposalDecision: { proposalId: savedId, skillKey: name, kind: "update", title: reason },
+        },
       );
     }
 

@@ -20,6 +20,7 @@ vi.mock("./queue.js", () => ({
 vi.mock("./reply-usage-state.js", () => ({
   buildReplyUsageState: () => ({}),
   recordReplyUsageState: vi.fn(),
+  resolveReplyProviderUsageWindows: async () => undefined,
 }));
 
 import { accountFollowupTurn } from "./agent-runner-result-accounting.js";

@@ -315,6 +315,22 @@ export async function executePreparedCliRun(
         ...mcpCaptureAttempt.env,
         ...localProcessEnv,
       });
+      if (isClaudeCliBackendId(context.backendResolved.id)) {
+        const fastMode = resolveFastModeForElapsed({
+          mode: params.fastMode,
+          startedAtMs: params.fastModeStartedAtMs ?? context.started,
+          fastAutoOnSeconds: params.fastModeAutoOnSeconds,
+        });
+        // OpenClaw owns /fast even when Claude's native settings enable it by default.
+        if (fastMode.enabled) {
+          delete env.CLAUDE_CODE_DISABLE_FAST_MODE;
+          if ((context.normalizedModel ?? params.model ?? "").includes("opus-4-7")) {
+            env.CLAUDE_CODE_ENABLE_OPUS_4_7_FAST_MODE = "1";
+          }
+        } else {
+          env.CLAUDE_CODE_DISABLE_FAST_MODE = "1";
+        }
+      }
       const nodeEnvEntries = Object.entries(preparedBackendEnv).filter(([key]) =>
         NODE_CLAUDE_FORWARD_ENV_KEYS.has(key),
       );

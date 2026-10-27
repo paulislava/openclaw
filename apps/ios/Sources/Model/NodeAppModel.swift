@@ -394,6 +394,7 @@ final class NodeAppModel {
     var dashboardNavigationRequestID: Int = 0
     @ObservationIgnored private var consumedDashboardNavigationRequestID: Int = 0
     var gatewaySetupRequestID: Int = 0
+    var showLockControl: Bool = false
     private(set) var pendingAgentDeepLinkPrompt: AgentDeepLinkPrompt?
     private var pendingGatewaySetupLink: GatewayConnectDeepLink?
     private(set) var pendingExecApprovalPrompt: ExecApprovalPrompt?
@@ -485,6 +486,11 @@ final class NodeAppModel {
     private var talkPermissionUpgradeReconnectGeneration: UInt64 = 0
     private var lastTalkPermissionReconnectAttemptAt: Date?
     private var voiceWakeSyncTask: Task<Void, Never>?
+    private var lockPollTask: Task<Void, Never>?
+    @ObservationIgnored private var lockGeneration: UInt64 = 0
+    @ObservationIgnored private var lockEventsTask: Task<Void, Never>?
+    /// Единый источник правды состояния блокировки для UI (экран + виджет).
+    var lockState: LockState?
     @ObservationIgnored private var cameraHUDDismissTask: Task<Void, Never>?
     @ObservationIgnored private var cameraHUDOwnerID: String?
     private let gatewayHealthMonitor = GatewayHealthMonitor()
@@ -3351,6 +3357,7 @@ extension NodeAppModel {
         self.gatewayRouteGeneration &+= 1
         self.stopNodeHostStatsPublisher()
         self.activeGatewayConnectConfig = nextConfig
+        self.syncLockGatewayConfig()
         prepareForGatewayConnect(
             stableID: effectiveStableID,
             preservingGatewayProblem: isSameGatewayTarget || preservesPreconnectProblem,
@@ -3378,6 +3385,137 @@ extension NodeAppModel {
             cfg,
             forceReconnect: forceReconnect,
             expectedGeneration: generation)
+    }
+
+    /// Записать реквизиты текущего gateway в App Group, чтобы виджет мог сам дергать /api/lock.
+    /// Берём данные из активного соединения — работает и для manual, и для discovered (Bonjour).
+    func syncLockGatewayConfig() {
+        guard let cfg = self.activeGatewayConnectConfig,
+              let token = cfg.token, !token.isEmpty
+        else {
+            self.clearLockGatewayConfig()
+            return
+        }
+        // Derive the HTTP base (same host:port as the WS URL) for /api/lock.
+        guard var comps = URLComponents(url: cfg.url, resolvingAgainstBaseURL: false) else {
+            self.clearLockGatewayConfig()
+            return
+        }
+        let isTLS = (cfg.url.scheme == "wss" || cfg.url.scheme == "https")
+        comps.scheme = isTLS ? "https" : "http"
+        comps.path = ""
+        comps.query = nil
+        comps.fragment = nil
+        guard let base = comps.string else {
+            self.clearLockGatewayConfig()
+            return
+        }
+        let fingerprint = cfg.tls?.expectedFingerprint
+            ?? cfg.tls?.storeKey.flatMap { GatewayTLSStore.loadFingerprint(stableID: $0) }
+        let config = LockGatewayConfig(baseURL: base, token: token, fingerprint: fingerprint)
+        if LockSharedStore.loadConfig() != config {
+            self.clearLockGatewayConfig()
+            LockSharedStore.saveConfig(config)
+        }
+    }
+
+    private func clearLockGatewayConfig() {
+        self.lockGeneration &+= 1
+        self.stopLockStatePolling()
+        self.stopLockEventsSubscription()
+        self.lockState = nil
+        LockSharedStore.clear()
+        WidgetCenterReloader.reload()
+    }
+
+    /// Обновить закешированное состояние блокировки для виджета из gateway.
+    /// Нужен, чтобы виджет подхватывал актуальное состояние при запуске/переподключении приложения,
+    /// а не только после ручного переключения в интерфейсе.
+    func refreshLockStateForWidget() {
+        guard let config = LockSharedStore.loadConfig() else { return }
+        let generation = self.lockGeneration
+        Task { [weak self] in
+            if let state = try? await LockGatewayClient(config: config).status() {
+                await MainActor.run {
+                    guard let self, self.lockGeneration == generation,
+                          LockSharedStore.loadConfig() == config else { return }
+                    self.applyLockState(state)
+                }
+            }
+        }
+    }
+
+    /// Периодически опрашивает состояние блокировки, пока gateway подключён,
+    /// чтобы виджет подхватывал изменения (например, ротацию кодового слова гостем),
+    /// даже если пользователь не открывает приложение и не переключает тумблер.
+    func startLockStatePolling() {
+        self.lockPollTask?.cancel()
+        self.lockPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 20_000_000_000) // 20s
+                if Task.isCancelled { break }
+                await self?.pollLockStateOnce()
+            }
+        }
+    }
+
+    func stopLockStatePolling() {
+        self.lockGeneration &+= 1
+        self.lockPollTask?.cancel()
+        self.lockPollTask = nil
+    }
+
+    /// Применяет новое состояние блокировки к единому источнику правды: обновляет observable
+    /// `lockState`, кеш App Group и перерисовывает виджет — только при фактическом изменении.
+    private func applyLockState(_ state: LockState) {
+        let previous = self.lockState
+        guard previous?.locked != state.locked || previous?.code != state.code else { return }
+        self.lockState = state
+        LockSharedStore.saveState(state)
+        WidgetCenterReloader.reload()
+    }
+
+    private func pollLockStateOnce() async {
+        guard let config = LockSharedStore.loadConfig() else { return }
+        let generation = self.lockGeneration
+        guard let state = try? await LockGatewayClient(config: config).status(),
+              !Task.isCancelled, self.lockGeneration == generation,
+              LockSharedStore.loadConfig() == config else { return }
+        self.applyLockState(state)
+    }
+
+    /// Живая подписка на SSE-события gateway: держит `lockState` и виджет всегда актуальными.
+    /// Авто-переподключение с бэкоффом 3с; 20-секундный поллинг остаётся дешёвым фолбэком.
+    func startLockEventsSubscription() {
+        self.lockEventsTask?.cancel()
+        self.lockEventsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let config = LockSharedStore.loadConfig() else {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    continue
+                }
+                guard let self else { return }
+                let generation = self.lockGeneration
+                do {
+                    for try await state in LockGatewayClient(config: config).events() {
+                        await MainActor.run {
+                            guard !Task.isCancelled, self.lockGeneration == generation,
+                                  LockSharedStore.loadConfig() == config else { return }
+                            self.applyLockState(state)
+                        }
+                    }
+                } catch {
+                    // Обрыв соединения — переподключаемся ниже.
+                }
+                if Task.isCancelled { break }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
+    }
+
+    func stopLockEventsSubscription() {
+        self.lockEventsTask?.cancel()
+        self.lockEventsTask = nil
     }
 
     /// Applies queued work only while its originating gateway attempt is still current.
@@ -3468,6 +3606,7 @@ extension NodeAppModel {
         self.chatSessionRoutingRestoreTask = nil
         self.disableGatewayAutoReconnect()
         self.activeGatewayConnectConfig = nil
+        self.clearLockGatewayConfig()
         ShareGatewayRelaySettings.clearConfig()
         await self.resetGatewaySessionsForForcedReconnect()
         guard !self.gatewayAutoReconnectEnabled, self.activeGatewayConnectConfig == nil else { return }
@@ -3557,6 +3696,8 @@ extension NodeAppModel {
         _ = self.beginGatewaySessionReset(chainingAfterExisting: true)
         self.voiceWakeSyncTask?.cancel()
         self.voiceWakeSyncTask = nil
+        self.stopLockStatePolling()
+        self.stopLockEventsSubscription()
         LiveActivityManager.shared.endActivity(reason: "manual_disconnect")
         self.gatewayHealthMonitor.stop()
         self.gatewayStatusText = "Offline"
@@ -3564,6 +3705,7 @@ extension NodeAppModel {
         self.gatewayRemoteAddress = nil
         self.connectedGatewayID = nil
         self.activeGatewayConnectConfig = nil
+        self.clearLockGatewayConfig()
         self.gatewayConnected = false
         setOperatorConnected(false)
         self.talkMode.updateGatewayConnected(false)
@@ -3630,6 +3772,8 @@ extension NodeAppModel {
         self.talkMode.updateGatewayConnected(false)
         self.voiceWakeSyncTask?.cancel()
         self.voiceWakeSyncTask = nil
+        self.stopLockStatePolling()
+        self.stopLockEventsSubscription()
         LiveActivityManager.shared.endActivity(reason: "new_gateway_connect")
         self.mainSessionBaseKey = "main"
         self.gatewaySessionScope = nil
@@ -4764,6 +4908,7 @@ extension NodeAppModel {
         self.operatorGatewayTask = nil
         self.voiceWakeSyncTask?.cancel()
         self.voiceWakeSyncTask = nil
+        self.clearLockGatewayConfig()
         self.gatewayHealthMonitor.stop()
         LiveActivityManager.shared.endActivity(
             reason: screenshot ? "screenshot_fixture" : "apple_review_demo")
@@ -4898,6 +5043,10 @@ extension NodeAppModel {
         shouldContinue: @MainActor @Sendable () -> Bool = { true }) async
     {
         guard shouldContinue() else { return }
+        self.syncLockGatewayConfig()
+        self.refreshLockStateForWidget()
+        self.startLockStatePolling()
+        self.startLockEventsSubscription()
         await self.registerAPNsTokenIfNeeded(shouldContinue: shouldContinue)
         guard shouldContinue() else { return }
         await self.syncWatchAppSnapshot(
@@ -8928,6 +9077,11 @@ extension NodeAppModel {
             await self.handleAgentDeepLink(link, originalURL: url)
         case let .gateway(link):
             self.stageGatewaySetupLink(link)
+        case .lock:
+            self.syncLockGatewayConfig()
+            self.showLockControl = true
+        case .chat:
+            self.openChatRequestID &+= 1
         case .dashboard:
             self.dashboardNavigationRequestID &+= 1
         case .gatewayAdd:

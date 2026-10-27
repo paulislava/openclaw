@@ -36,5 +36,7 @@
 		<string>JetBrainsMono-Medium.ttf</string>
 		<string>JetBrainsMono-SemiBold.ttf</string>
 	</array>
+	<key>OpenClawAppGroupIdentifier</key>
+	<string>$(OPENCLAW_ACTIVE_APP_GROUP_ID)</string>
 </dict>
 </plist>

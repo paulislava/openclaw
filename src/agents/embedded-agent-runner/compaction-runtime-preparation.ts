@@ -40,6 +40,7 @@ export function resolveCompactionRuntimeSelection(params: {
   modelId?: string | null;
   authProfileId?: string | null;
   modelSelectionLocked?: boolean;
+  ignoreConfiguredOverride?: boolean;
   sandboxSessionKey?: string | null;
   sandboxAgentId?: string;
   sessionKey?: string | null;

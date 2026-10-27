@@ -62,6 +62,45 @@ const cfg: OpenClawConfig = {
 };
 const monitorDefaults = { getConfig: () => cfg, accountId: "default" };
 
+it("dead-letters stale SQLite backlog before dispatching a fresh forward with an old origin", async () => {
+  await withTempState(async ({ queue, monitor: makeMonitor }) => {
+    const stale = updatePayload(1);
+    const eventId = String(1).padStart(16, "0");
+    await queue.enqueue(eventId, stale, {
+      laneKey: telegramSpooledUpdateLaneKey(stale.update),
+      receivedAt: Date.now() - 25 * 60 * 60 * 1000,
+    });
+    const freshBase = updatePayload(2);
+    const fresh = {
+      ...freshBase,
+      update: {
+        ...freshBase.update,
+        message: {
+          ...freshBase.update.message,
+          date: Math.floor(Date.now() / 1000),
+          forward_origin: { type: "hidden_user", date: 1, sender_user_name: "A" },
+        },
+      },
+    };
+    await queue.enqueue(String(2).padStart(16, "0"), fresh, {
+      laneKey: telegramSpooledUpdateLaneKey(fresh.update),
+    });
+    const dispatch = vi.fn<MonitorOptions["dispatch"]>().mockResolvedValue({ kind: "completed" });
+    const monitor = makeMonitor({ dispatch });
+    try {
+      monitor.start();
+      await monitor.waitForIdle();
+      expect(dispatch.mock.calls.map(([update]) => update)).toEqual([fresh.update]);
+      expect(await queue.listFailed?.({ limit: "all" })).toEqual([
+        expect.objectContaining({ id: eventId, reason: "stale-spooled-update" }),
+      ]);
+      expect(await queue.listPending({ limit: "all" })).toEqual([]);
+    } finally {
+      await monitor.stop();
+    }
+  });
+});
+
 function updatePayload(updateId: number) {
   return {
     version: 1,
@@ -264,7 +303,7 @@ describe("createTelegramIngressMonitor", () => {
       await forumFlag(-9017, false);
       const ackEntered = deferred();
       const ackRelease = deferred();
-      const receivedAt = 1_700_000_000_000;
+      const receivedAt = Date.now();
       const delivered: Array<{ laneKey: string | undefined; receivedAt: number }> = [];
       const monitor = makeMonitor({
         botInfo: telegramBotInfoForTest,
@@ -295,7 +334,9 @@ describe("createTelegramIngressMonitor", () => {
         ackRelease.resolve();
         await admission;
         await monitor.waitForIdle();
-        expect(delivered).toEqual([{ laneKey: "telegram:-9017", receivedAt: 1_700_000_000 }]);
+        expect(delivered).toEqual([
+          { laneKey: "telegram:-9017", receivedAt: Math.floor(receivedAt / 1000) },
+        ]);
         expect(await monitor.admit(update)).toMatchObject({
           kind: "durable",
           queueResult: { kind: "completed" },

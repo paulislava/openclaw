@@ -377,6 +377,23 @@ export type TelegramForwardedContext = {
   fromMessageId?: number;
 };
 
+/** Projects only the forwarded origin that passed inbound context visibility checks. */
+export function projectTelegramForwardedContext(
+  origin: TelegramForwardedContext | null | undefined,
+) {
+  return {
+    ForwardedFrom: origin?.from,
+    ForwardedFromType: origin?.fromType,
+    ForwardedFromId: origin?.fromId,
+    ForwardedDate: typeof origin?.date === "number" ? origin.date * 1000 : undefined,
+    ForwardedFromUsername: origin?.fromUsername,
+    ForwardedFromTitle: origin?.fromTitle,
+    ForwardedFromSignature: origin?.fromSignature,
+    ForwardedFromChatType: origin?.fromChatType,
+    ForwardedFromMessageId: origin?.fromMessageId,
+  };
+}
+
 export function normalizeForwardedContext(msg: Message): TelegramForwardedContext | null {
   const origin = msg.forward_origin;
   if (!origin) {

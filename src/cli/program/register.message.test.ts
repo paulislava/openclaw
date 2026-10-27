@@ -12,6 +12,34 @@ describe("registerMessageCommands", () => {
     vi.clearAllMocks();
   });
 
+  it("forwards the CLI voice flag with the media attachment", async () => {
+    await createProgram().parseAsync(
+      [
+        "message",
+        "send",
+        "--channel",
+        "telegram",
+        "--target",
+        "123",
+        "--media",
+        "note.ogg",
+        "--as-voice",
+      ],
+      { from: "user" },
+    );
+    expect(runMessageAction).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        action: "send",
+        channel: "telegram",
+        target: "123",
+        mediaUrls: ["note.ogg"],
+        asVoice: true,
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it("forwards the pinned resource id separately from the message id", async () => {
     await createProgram().parseAsync(
       [

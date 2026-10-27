@@ -72,6 +72,21 @@ it.each(["process", "node"] as const)(
   },
 );
 
+it.each([undefined, false, true] as const)(
+  "applies OpenClaw fast mode to Claude child env (%s)",
+  async (fastMode) => {
+    const context = buildPreparedCliRunContext({
+      provider: "claude-cli",
+      fastMode,
+      backend: { command: "/bin/sh", args: [], output: "text", input: "stdin" },
+    });
+    await withEnvAsync({ CLAUDE_CODE_DISABLE_FAST_MODE: "1" }, () =>
+      executePreparedCliRun(context),
+    );
+    expect(childEnv()?.CLAUDE_CODE_DISABLE_FAST_MODE).toBe(fastMode === true ? undefined : "1");
+  },
+);
+
 it("counts awaited backend setup against the automatic cutoff", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(1000);

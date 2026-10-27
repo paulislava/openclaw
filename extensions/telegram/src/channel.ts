@@ -54,6 +54,7 @@ import {
 } from "./accounts.js";
 import { resolveTelegramAutoThreadId } from "./action-threading.js";
 import { telegramAgentPrompt } from "./agent-prompt.js";
+import { createTelegramLocationTools } from "./agent-tools-location.js";
 import { lookupTelegramChatId } from "./api-fetch.js";
 import { telegramApprovalCapability } from "./approval-native.js";
 import * as auditModule from "./audit.js";
@@ -344,6 +345,7 @@ export const telegramPlugin = createChatChannelPlugin({
       setupWizard: telegramSetupWizard,
       setupContract: telegramSetupContract,
     }),
+    agentTools: ({ cfg }) => createTelegramLocationTools(cfg ?? {}),
     commands: {
       nativeCommandsAutoEnabled: true,
       nativeSkillsAutoEnabled: true,

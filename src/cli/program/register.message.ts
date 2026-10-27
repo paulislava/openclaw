@@ -35,6 +35,7 @@ import { resolveMessageSecretScope } from "../message-secret-scope.js";
 import { requestExitAfterOneShotOutput } from "../one-shot-exit.js";
 import type { ProgramContext } from "./context.js";
 import { collectOption } from "./helpers.js";
+import { registerMessageLocationCommands } from "./message/register.location.js";
 import { applyParentDefaultHelpAction } from "./parent-default-help.js";
 
 const requiredOptions = {
@@ -253,6 +254,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/message", "docs.openclaw.ai/cli/m
       requestExitAfterOneShotOutput(defaultRuntime, failed ? 1 : 0);
     },
   };
+  registerMessageLocationCommands(message, helpers);
   helpers
     .withMessageBase(
       message
@@ -285,6 +287,11 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/message", "docs.openclaw.ai/cli/m
         .option(
           "--silent",
           "Send message silently without notification (Telegram + Discord)",
+          false,
+        )
+        .option(
+          "--as-voice",
+          "Send audio as a Telegram voice message with waveform (use --media)",
           false,
         ),
     )

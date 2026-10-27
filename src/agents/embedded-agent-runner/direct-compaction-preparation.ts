@@ -47,6 +47,8 @@ import type { EmbeddedAgentCompactResult } from "./types.js";
 export type PreparedCompactEmbeddedAgentSessionParams = CompactEmbeddedAgentSessionParams & {
   preparedModelRuntime: PreparedModelRuntimeSnapshot;
   requestedRouteResolution?: "resolved";
+  /** The model-fallback loop has already selected the compaction candidate. */
+  ignoreConfiguredOverride?: boolean;
   seedCompaction?: CompactionAppendPersistenceAsync;
   sandbox?: SandboxContext | null;
 };

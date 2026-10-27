@@ -520,6 +520,25 @@ export async function emitToolResultOutput(params: {
     return;
   }
 
+  if (
+    !isToolError &&
+    toolName === "skill_workshop" &&
+    details?.proposalDecision &&
+    ctx.params.onToolResult
+  ) {
+    try {
+      const { readSkillProposalDecisionPrompt, buildSkillProposalDecisionReplyPayload } =
+        await import("../skills/workshop/proposal-decision.js");
+      const prompt = readSkillProposalDecisionPrompt(result);
+      if (prompt) {
+        await ctx.params.onToolResult(buildSkillProposalDecisionReplyPayload(prompt));
+      }
+    } catch (error) {
+      // The draft is already durable; keep its id visible if the decision card fails.
+      ctx.log.warn(`failed to deliver skill proposal controls: ${String(error)}`);
+    }
+  }
+
   const mediaReply = isToolError ? undefined : extractToolResultMediaArtifact(result);
   const mediaUrls = mediaReply
     ? filterToolResultMediaUrls(

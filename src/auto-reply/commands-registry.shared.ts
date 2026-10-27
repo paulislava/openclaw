@@ -161,6 +161,13 @@ export function buildBuiltinChatCommands(
       freeformArgs("request", "Dashboard requirements"),
     ),
     defineBuiltinCommand(
+      "proposal",
+      "Apply or reject a pending Skill Workshop draft.",
+      "tools",
+      "standard",
+      { modelIndependent: "always", ...freeformArgs("decision", "apply|reject <proposal id>") },
+    ),
+    defineBuiltinCommand(
       "learn",
       "Learn from recent work or named sources into skills or memory.",
       "tools",

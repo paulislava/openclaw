@@ -750,6 +750,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/acp/runtime/session-meta.legacy-migration.test.ts",
   "src/agents/mcp-oauth-refresh-issuer.test.ts",
   "src/agents/tools/skill-workshop-tool.test.ts",
+  "src/auto-reply/reply/commands-proposal.test.ts",
   "src/skills/workshop/drafts.test.ts",
   "src/skills/workshop/experience-review.test.ts",
   "src/skills/workshop/library.test.ts",

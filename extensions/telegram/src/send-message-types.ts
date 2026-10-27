@@ -87,8 +87,10 @@ export type TelegramSendResult = {
   };
 };
 
-export type TelegramLocationSendOpts = TelegramThreadedSendOpts &
-  Pick<
+export type TelegramLocationSendOpts = TelegramThreadedSendOpts & {
+  foursquareId?: string;
+  googlePlaceId?: string;
+} & Pick<
     TelegramSendOpts,
     | "buttons"
     | "quoteText"

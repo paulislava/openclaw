@@ -21,6 +21,7 @@ import {
   type ProviderUsageSnapshot,
 } from "openclaw/plugin-sdk/provider-usage";
 import { CLAUDE_CLI_PROFILE_ID } from "./cli-constants.js";
+import { readClaudeCliUsageCredential } from "./cli-usage-credentials.js";
 
 const ANTHROPIC_COST_URL = "https://api.anthropic.com/v1/organizations/cost_report";
 const ANTHROPIC_MESSAGES_USAGE_URL =
@@ -241,9 +242,9 @@ export async function resolveAnthropicUsageAuth(
     }
   }
 
-  // Claude owns its native refresh-token family. Do not resolve a copied
-  // claude-cli profile here: generic OAuth refresh invalidates Claude's login.
-  return { handled: true };
+  // Native usage reads only fresh access material; Claude remains its refresh owner.
+  const nativeUsage = await readClaudeCliUsageCredential({ env: ctx.env, signal: ctx.signal });
+  return nativeUsage ?? { handled: true };
 }
 
 /** Formats keychain plan metadata like ("max", "default_max_20x") as "Max (20x)". */

@@ -128,8 +128,21 @@ export function createTelegramInboundBuffers({
     }
     return typeof entry.msg.text === "string" && hasDebounceableText && entry.allMedia.length === 0;
   };
+  const hasForwardMetadata = (value: unknown): boolean =>
+    isRecord(value) &&
+    Boolean(
+      value.forward_origin ??
+      value.forward_from ??
+      value.forward_from_chat ??
+      value.forward_sender_name ??
+      value.forward_date,
+    );
   const resolveTelegramDebounceLane = (msg: Message): TelegramDebounceLane =>
-    msg.forward_origin ? "forward" : "default";
+    hasForwardMetadata(msg) ||
+    hasForwardMetadata(msg.reply_to_message) ||
+    msg.external_reply?.origin
+      ? "forward"
+      : "default";
   // Buffered forwards download after their quiet window, like album members, so a slow
   // attachment cannot split the burst. A retryable member failure retries the whole batch.
   const hydrateBufferedMedia = async (

@@ -480,6 +480,12 @@ export function createGatewayHttpRequestHandler(
             opts.getGatewayRequestContext?.()?.getCommittedRuntimeConfig?.() ?? loadGatewayConfig(),
         }),
       );
+      addAdmittedStage(scopedRequestPath === "/api/lock", async () =>
+        (await import("./lock-http.js")).handleLockHttpRequest(req, res, routeAuth),
+      );
+      addAdmittedStage(scopedRequestPath === "/api/lock/events", async () =>
+        (await import("./lock-http.js")).handleLockEventsHttpRequest(req, res, routeAuth),
+      );
       addAdmittedStage(
         scopedRequestPath.startsWith("/__openclaw__/board/"),
         async () =>

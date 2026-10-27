@@ -74,6 +74,8 @@ public enum DeepLinkRoute: Sendable, Equatable {
     case gateway(GatewayConnectDeepLink)
     case gatewayAdd(GatewayAddDeepLink)
     case dashboard
+    case lock
+    case chat
 }
 
 /// An address to add, never a grant of access or a replacement for the current gateway.
@@ -590,6 +592,12 @@ public enum DeepLinkParser {
 
         case "dashboard":
             return .dashboard
+
+        case "lock":
+            return .lock
+
+        case "chat":
+            return .chat
 
         default:
             return nil

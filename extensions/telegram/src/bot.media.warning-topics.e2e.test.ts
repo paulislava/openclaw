@@ -422,6 +422,66 @@ describe("telegram media groups", () => {
     MEDIA_GROUP_TEST_TIMEOUT_MS,
   );
 
+  it.each(["reply_to_message", "external_reply"])(
+    "coalesces forwarded text and a %s comment into one processing turn",
+    async (replyField) => {
+      const deliveredTurn = createDeferred<MsgContext>();
+      const runtimeError = vi.fn((error: unknown) => deliveredTurn.reject(error));
+      const { handler } = await createBotHandlerWithOptions({ runtimeError });
+      vi.useFakeTimers({ toFake: ["performance"] });
+      const timers = holdMediaGroup(1_000);
+      mediaHarnessReplySpy.mockImplementation(async (ctx) => {
+        deliveredTurn.resolve(ctx);
+        return undefined;
+      });
+      const forwarded = {
+        chat: { id: 42, type: "private" },
+        from: { id: 777, is_bot: false, first_name: "N" },
+        message_id: 31,
+        text: "Forwarded body",
+        date: 1736380800,
+        forward_origin: { type: "hidden_user", date: 1736380700, sender_user_name: "A" },
+      };
+      try {
+        await handler({
+          message: forwarded,
+          me: { username: "openclaw_bot" },
+          getFile: async () => ({}),
+        });
+        await handler({
+          message: {
+            chat: forwarded.chat,
+            from: forwarded.from,
+            message_id: 32,
+            text: "My comment",
+            date: 1736380801,
+            [replyField]:
+              replyField === "external_reply"
+                ? {
+                    origin: forwarded.forward_origin,
+                    chat: forwarded.chat,
+                    message_id: forwarded.message_id,
+                  }
+                : forwarded,
+          },
+          me: { username: "openclaw_bot" },
+          getFile: async () => ({}),
+        });
+        expect(timers.elapse()).toBe(1);
+        const payload = await deliveredTurn.promise;
+        expect(payload.Body).toContain("Forwarded body");
+        expect(payload.Body).toContain("My comment");
+        expect(mediaHarnessReplySpy).toHaveBeenCalledTimes(1);
+        expect(runtimeError).not.toHaveBeenCalled();
+      } finally {
+        mediaHarnessReplySpy.mockReset();
+        timers.restore(true);
+        vi.useRealTimers();
+      }
+    },
+    MEDIA_GROUP_TEST_TIMEOUT_MS,
+  );
+
   it(
     "coalesces forwarded text + forwarded attachment into a single processing turn with default debounce config",
     async () => {

@@ -36,6 +36,54 @@ it("renders a full footer from a reply usage snapshot", () => {
   });
   expect(line).toBe("claude-opus-4-6|medium|false|false|75|272000|0.03771985");
 });
+it("projects the working directory, subscription windows and remaining context into full footers", () => {
+  const line = resolveResponseUsageLine({
+    config: {
+      messages: {
+        responseUsage: "full",
+        usageTemplate: {
+          output: {
+            sep: "",
+            default: [
+              {
+                text: "{workspace.current_dir}|{context.used_tokens}|{context.remaining_tokens}|{context.max_tokens}|",
+              },
+              { each: "limits.windows", item: "{label}:{remaining_pct|pct}", join: "," },
+            ],
+          },
+        },
+      },
+    },
+    agentDir: "/synthetic/agent",
+    usage: { input: 100, output: 5 },
+    replyUsageState: {
+      cwd: "/work/project/",
+      contextTokenBudget: 1000,
+      contextUsedTokens: 250,
+      providerUsageWindows: [{ label: "5h", usedPercent: 40 }],
+      usage: { input: 100, output: 5 },
+    },
+  });
+  expect(line).toBe("project|250|750|1000|5h:60%");
+});
+
+it("keeps a full metadata footer when a native CLI omits token counters", () => {
+  expect(
+    resolveResponseUsageLine({
+      config: {
+        messages: {
+          responseUsage: "full",
+          usageTemplate: {
+            output: { sep: "", default: [{ text: "{model.id}|{context.remaining_tokens}" }] },
+          },
+        },
+      },
+      agentDir: "/synthetic/agent",
+      replyUsageState: { model: "native-model", contextTokenBudget: 1000, contextUsedTokens: 250 },
+    }),
+  ).toBe("native-model|750");
+});
+
 const usageLine = "Usage: 12 in / 3 out";
 
 it("marks a standalone usage footer as non-terminal status", () => {

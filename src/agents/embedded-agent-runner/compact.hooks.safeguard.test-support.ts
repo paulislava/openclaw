@@ -229,7 +229,7 @@ export function registerCompactionSafeguardTests({
     it.each([
       ["provider timeout", "request timed out", "fallback"],
       ["intentional quality rejection", undefined, "degrade"],
-      ["explicit model timeout", "request timed out", "cancel"],
+      ["explicit model timeout", "request timed out", "fallback"],
       // A corrective failure reuses the successful earlier summary on the same model.
       ["corrective 408", "408", "degrade"],
       [
@@ -271,9 +271,7 @@ export function registerCompactionSafeguardTests({
             !(outcome === "thinking" && options?.reasoning === "minimal") &&
             !(corrective && requestedModels.length === 1);
           const text =
-            outcome === "cancel" || outcome === "degrade" || corrective
-              ? "Missing required sections."
-              : fallbackSummary;
+            outcome === "degrade" || corrective ? "Missing required sections." : fallbackSummary;
           return createAssistantResultStream(
             rejected
               ? { ...createAssistant(activeModel, [], "error"), errorMessage }
@@ -332,7 +330,7 @@ export function registerCompactionSafeguardTests({
             details: { qualityDegraded: true },
           });
           expect(sessionManager.buildSessionContext().messages).not.toEqual(originalMessages);
-        } else if (outcome !== "cancel") {
+        } else {
           if (outcome === "thinking") {
             expect([...new Set(requestedThinking)]).toEqual(["off", "minimal"]);
           }
@@ -350,13 +348,6 @@ export function registerCompactionSafeguardTests({
             summary: expect.stringContaining(expectedSummaryRequest),
             details: { latestUnresolvedUserRequest: "Keep the rollout notes." },
           });
-        } else {
-          expect(result).toMatchObject({ ok: false, compacted: false });
-          expect(result.reason).toMatch(explicitModel ? /timed out/i : /quality/i);
-          expect(sessionManager.getEntries().some((entry) => entry.type === "compaction")).toBe(
-            false,
-          );
-          expect(sessionManager.buildSessionContext().messages).toEqual(originalMessages);
         }
       },
     );

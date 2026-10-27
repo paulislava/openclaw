@@ -449,9 +449,16 @@ export async function handleTelegramAction(
     const forceDocument =
       readBooleanParam(params, "forceDocument") ?? readBooleanParam(params, "asDocument") ?? false;
     const pin = normalizeTelegramDeliveryPin(params);
+    const foursquareId = location ? readStringParam(params, "foursquareId") : undefined;
+    const googlePlaceId = location ? readStringParam(params, "googlePlaceId") : undefined;
     const telegramData =
-      buttons || quoteText
-        ? { ...(buttons ? { buttons } : {}), ...(quoteText ? { quoteText } : {}) }
+      buttons || quoteText || foursquareId || googlePlaceId
+        ? {
+            ...(buttons ? { buttons } : {}),
+            ...(quoteText ? { quoteText } : {}),
+            ...(foursquareId ? { foursquareId } : {}),
+            ...(googlePlaceId ? { googlePlaceId } : {}),
+          }
         : undefined;
     const payload: ReplyPayload = {
       text: content,

@@ -18,11 +18,15 @@ it.each([
   expect(resolveUsageProviderId(value)).toBe(expected);
 });
 
-it("maps only OpenAI subscription credentials to usage windows", () => {
-  expect(resolveUsageProviderId("openai", { credentialType: "oauth" })).toBe("openai");
-  expect(resolveUsageProviderId("openai", { credentialType: "token" })).toBe("openai");
-  expect(resolveUsageProviderId("openai", { credentialType: "api_key" })).toBeUndefined();
-});
+it.each(["openai", "codex", " CODEX "])(
+  "maps only %s subscription credentials to OpenAI usage windows",
+  (provider) => {
+    expect(resolveUsageProviderId(provider, { credentialType: "oauth" })).toBe("openai");
+    expect(resolveUsageProviderId(provider, { credentialType: "token" })).toBe("openai");
+    expect(resolveUsageProviderId(provider, { credentialType: "api_key" })).toBeUndefined();
+    expect(resolveUsageProviderId(provider)).toBeUndefined();
+  },
+);
 
 it("treats non-finite usage percentages as zero", () => {
   expect(clampPercent(Number.NaN)).toBe(0);

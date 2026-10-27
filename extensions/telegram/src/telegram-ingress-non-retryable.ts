@@ -14,6 +14,14 @@ const MISSING_AGENT_HARNESS_MESSAGE_RE = /Requested agent harness "[^"]+" is not
 const TELEGRAM_UNREACHABLE_RECIPIENT_RE =
   /\b403\b[\s\S]*\b(?:bot was blocked by the user|bot was kicked|user is deactivated)\b/iu;
 
+/** Prevents stale Telegram instructions from executing after a long outage. */
+export class TelegramStaleIngressError extends Error {
+  constructor() {
+    super("Telegram spooled update is older than the 24-hour replay backlog window.");
+    this.name = "TelegramStaleIngressError";
+  }
+}
+
 /** Keeps callback-only terminal failures out of ordinary message retry policy. */
 export class TelegramCallbackProcessingError extends Error {
   constructor(cause: unknown) {
@@ -30,6 +38,9 @@ export function resolveTelegramIngressNonRetryableFailure(err: unknown) {
   );
   for (const candidate of candidates) {
     const message = formatErrorMessage(candidate);
+    if (candidate instanceof TelegramStaleIngressError) {
+      return { reason: "stale-spooled-update" as const, message };
+    }
     if (callbackFailure && candidate instanceof Error) {
       if (candidate.message === "Gateway requester authority changed") {
         return { reason: "callback-authority-changed" as const, message };

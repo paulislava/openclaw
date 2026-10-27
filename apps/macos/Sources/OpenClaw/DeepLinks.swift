@@ -80,6 +80,8 @@ final class DeepLinkHandler {
             await self.gatewaySetup(link)
         case let .gatewayAdd(link):
             GatewayBrowserOnboardingController.shared.present(link)
+        case .lock, .chat:
+            break
         }
     }
 

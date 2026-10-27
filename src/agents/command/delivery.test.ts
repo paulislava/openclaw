@@ -201,6 +201,37 @@ describe("deliverAgentCommandResult payload normalization", () => {
     expectDeliveryStatusFields: expectStatus,
   });
 
+  it.each([undefined, "off"])(
+    "retains the CLI delivery usage preference (%s)",
+    async (responseUsage) => {
+      outboundMock.mockResolvedValue(sentMessage);
+      await deliverForTest({
+        cfg: { messages: { responseUsage: "tokens" } },
+        sessionEntry: { sessionId: "session", updatedAt: 1, responseUsage },
+        payloads: [{ text: "Completed." }],
+        result: createResult({
+          meta: { durationMs: 1, agentMeta: { usage: { total: 1250 } } },
+        }),
+      });
+      expectOutboundPayloads({
+        text: responseUsage === "off" ? "Completed." : "Completed.\nUsage: 1.3k total",
+      });
+    },
+  );
+
+  it("keeps CLI tool-only final text private when usage is enabled", async () => {
+    const delivered = await deliverForTest({
+      cfg: { messages: { responseUsage: "tokens" } },
+      payloads: [{ text: "Private answer" }],
+      opts: { sourceReplyDeliveryMode: "message_tool_only" },
+      result: createResult({
+        meta: { durationMs: 1, agentMeta: { usage: { total: 1250 } } },
+      }),
+    });
+    expect(outboundMock).not.toHaveBeenCalled();
+    expect(delivered.payloads).toMatchObject([{ text: "Private answer" }]);
+  });
+
   it("rechecks delivery ownership after asynchronous payload preparation", async () => {
     let deliveryCurrent = true;
     normalizerMock.mockImplementationOnce(

@@ -10,6 +10,7 @@ import { captureSessionTarget } from "../../sessions/session-controller.target.j
 import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-payload.js";
 import type { ReplyPayload } from "../types.js";
 import type { AgentTurnExecutionResult } from "./agent-runner-execution.types.js";
+import { shouldDeliverDespiteSourceReplySuppression } from "./dispatch-from-config.payloads.js";
 import { deliverFollowupDecision, resolveFollowupDeliveryDecision } from "./followup-delivery.js";
 import {
   createAccounting,
@@ -94,6 +95,31 @@ describe("resolveFollowupDeliveryDecision", () => {
   };
   const progressTarget = { ...sourceReplyTarget, sourceReplyFinal: false };
   const finalTarget = { ...sourceReplyTarget, sourceReplyFinal: true };
+
+  it("keeps the queued usage footer eligible after a completed room reply", async () => {
+    const turn = createTurn({ config: { messages: { responseUsage: "tokens" } } });
+    turn.queued.run.sourceReplyDeliveryMode = "message_tool_only";
+    const execution = createSettledExecution("Private final diagnostic");
+    execution.outcome.result.messagingToolSentTargets = [finalTarget];
+    const decision = await decide(
+      turn,
+      execution,
+      createAccounting([{ text: "Private final diagnostic" }], { usage: { total: 1250 } }),
+    );
+    expect(decision.kind).toBe("deliver");
+    if (decision.kind !== "deliver") {
+      throw new Error("Expected queued usage footer");
+    }
+    expect(decision.payloads).toEqual([{ text: "Usage: 1.3k total", isStatusNotice: true }]);
+    expect(
+      shouldDeliverDespiteSourceReplySuppression(expectDefined(decision.payloads[0]), {
+        ctx: { InboundEventKind: "room_event" },
+        explicitCommandTurnCtx: false,
+        suppressAutomaticSourceDelivery: true,
+        sendPolicyDenied: false,
+      }),
+    ).toBe(true);
+  });
 
   it.each([
     { state: undefined, routed: true, delivered: true },

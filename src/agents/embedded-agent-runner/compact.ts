@@ -23,6 +23,7 @@ import {
   resolveSessionAgentIds,
 } from "../agent-scope.js";
 import { resolveCliBackendConfig } from "../cli-backends.js";
+import { CLAUDE_CLI_PROVIDER, compactViaClaudeCli } from "../cli-runner/compact-cli.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
 import { coerceToFailoverError } from "../failover-error.js";
 import { ensureSelectedAgentHarnessPlugin } from "../harness/runtime-plugin.js";
@@ -47,12 +48,39 @@ import { resolveEmbeddedCompactionTarget } from "./compaction-runtime-context.js
 import { resolveCompactionRuntimeSelection } from "./compaction-runtime-preparation.js";
 import { resolveCompactionTimeoutMs } from "./compaction-safety-timeout.js";
 import type { PreparedCompactEmbeddedAgentSessionParams } from "./direct-compaction-preparation.js";
-import { compactEmbeddedAgentSessionDirectOnce } from "./direct-compaction.js";
+import { compactEmbeddedAgentSessionDirectOnce as compactEmbeddedAgentSessionDirectOnceEmbedded } from "./direct-compaction.js";
 import { readCompactionAccountingRecorder } from "./run/compaction-accounting-bridge.js";
 import { resolveSharedPluginRuntimeWorkspace } from "./run/prepared-runtime-context.js";
 import type { EmbeddedAgentCompactResult } from "./types.js";
 
 export type { CompactEmbeddedAgentSessionParams } from "./compact.types.js";
+
+/** CLI summaries skip HTTP auth, while planning and commits keep their existing owners. */
+async function compactEmbeddedAgentSessionDirectOnce(
+  params: PreparedCompactEmbeddedAgentSessionParams,
+): Promise<EmbeddedAgentCompactResult> {
+  const selection = resolveCompactionRuntimeSelection({
+    ...params,
+    modelId: params.model,
+    boundHarnessRuntime: params.agentHarnessId,
+    preparedRuntimePlan: params.runtimePlan,
+  });
+  if (
+    selection.selectedHarnessRuntime === CLAUDE_CLI_PROVIDER ||
+    selection.provider === CLAUDE_CLI_PROVIDER
+  ) {
+    return await compactViaClaudeCli(
+      {
+        ...params,
+        provider: selection.provider,
+        model: selection.modelId,
+        authProfileId: selection.target.authProfileId,
+      },
+      params.seedCompaction,
+    );
+  }
+  return await compactEmbeddedAgentSessionDirectOnceEmbedded(params);
+}
 
 export async function compactNativeCliSession(params: {
   replyOperation?: ReplyOperation;
@@ -250,17 +278,22 @@ export async function compactEmbeddedAgentSessionDirect(
   // Native control operations reuse the backend's existing authenticated session.
   // Run them before generic model preparation so subscription-only CLI sessions do
   // not incorrectly require an OpenClaw model API credential.
-  const nativeCliResult = await compactNativeCliSession({
-    replyOperation:
-      resolveSessionControllerOperationForSignal(paramsInput.abortSignal) ??
-      getCurrentSessionControllerOwner(),
-    runtime: runtimeSelection.selectedHarnessRuntime,
-    compactParams: {
-      ...requestedParams,
-      agentDir: requestedAgentDir,
-      workspaceDir: requestedWorkspaceDir,
-    },
-  });
+  const nativeCliResult =
+    (lockedHarnessRuntime && lockedHarnessRuntime !== "openclaw") ||
+    (!requestedParams.config?.agents?.defaults?.compaction?.model?.trim() &&
+      (requestedParams.cliSessionId || requestedParams.cliSessionBinding))
+      ? await compactNativeCliSession({
+          replyOperation:
+            resolveSessionControllerOperationForSignal(paramsInput.abortSignal) ??
+            getCurrentSessionControllerOwner(),
+          runtime: runtimeSelection.selectedHarnessRuntime,
+          compactParams: {
+            ...requestedParams,
+            agentDir: requestedAgentDir,
+            workspaceDir: requestedWorkspaceDir,
+          },
+        })
+      : undefined;
   if (nativeCliResult) {
     return nativeCliResult;
   }
@@ -381,7 +414,6 @@ export async function compactEmbeddedAgentSessionDirect(
       const compactPrepared = async () => {
         if (
           seedCompaction ||
-          params.config?.agents?.defaults?.compaction?.model?.trim() ||
           (
             resolveCompactionFallbacksOverride(params) ??
             resolveAgentModelFallbackValues(params.config?.agents?.defaults?.model)
@@ -473,6 +505,7 @@ export async function compactEmbeddedAgentSessionDirect(
               model,
               agentHarnessId: isPrimaryCandidate ? params.agentHarnessId : undefined,
               requestedRouteResolution: isPrimaryCandidate ? undefined : "resolved",
+              ignoreConfiguredOverride: true,
               authProfileId,
               authProfileIdSource: preservesPrimaryAuth ? params.authProfileIdSource : undefined,
               // The primary attempt retains its already prepared atomic plan. An

@@ -39,6 +39,7 @@ import { normalizeTelegramStateAccountId } from "./state-account-id.js";
 import {
   resolveTelegramIngressNonRetryableFailure,
   TelegramCallbackProcessingError,
+  TelegramStaleIngressError,
 } from "./telegram-ingress-non-retryable.js";
 import { resolveTelegramUpdateId, telegramQueueEventId } from "./telegram-ingress-spool.js";
 import {
@@ -52,6 +53,7 @@ const TELEGRAM_SPOOLED_HANDLER_TIMEOUT_ENV = "OPENCLAW_TELEGRAM_SPOOLED_HANDLER_
 const TELEGRAM_SPOOLED_DRAIN_START_LIMIT = 100;
 const TELEGRAM_SPOOLED_DRAIN_SCAN_LIMIT = TELEGRAM_SPOOLED_DRAIN_START_LIMIT * 10;
 const TELEGRAM_SPOOLED_DRAIN_POLL_INTERVAL_MS = 500;
+const TELEGRAM_SPOOLED_BACKLOG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export function resolveTelegramAdoptionStallTimeoutMs(params: {
   configured?: number;
@@ -352,7 +354,12 @@ export function createTelegramIngressMonitor(params: CreateTelegramIngressMonito
           ...(preparedPollAnswer ? { preparedPollAnswer } : {}),
         };
       },
-      deserialize: (payload) => {
+      deserialize: (payload, { claim }) => {
+        // Canonical queue receipt time is authoritative; core owns the resulting
+        // non-retryable disposition and releases the lane for fresh updates.
+        if (Date.now() - claim.receivedAt > TELEGRAM_SPOOLED_BACKLOG_MAX_AGE_MS) {
+          throw new TelegramStaleIngressError();
+        }
         const update = payload.update;
         if (typeof update === "object" && update !== null) {
           recordTelegramUpdateReceivedAt(update, payload.receivedAt);

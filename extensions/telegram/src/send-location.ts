@@ -51,6 +51,8 @@ export async function sendLocationTelegram(
       ...prepared.threadParams,
       ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       ...(opts.silent === true ? { disable_notification: true } : {}),
+      ...(hasName && opts.foursquareId ? { foursquare_id: opts.foursquareId } : {}),
+      ...(hasName && opts.googlePlaceId ? { google_place_id: opts.googlePlaceId } : {}),
     };
     const label = hasName ? "venue" : "location";
     const delivery = await withTelegramNativeQuoteFallback({

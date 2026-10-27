@@ -20,6 +20,7 @@ import type {
   TelegramMediaRef,
   TelegramMessageContextSessionRuntime,
 } from "./bot-message-context.types.js";
+import { projectTelegramForwardedContext } from "./bot/body-helpers.js";
 import {
   buildGroupLabel,
   buildSenderLabel,
@@ -544,7 +545,7 @@ export async function buildTelegramInboundContextPayload(
     },
     reply: {
       to: telegramTo,
-      replyToId: replyHead?.messageId ?? visibleReplyTarget?.id,
+      replyToId: typeof msg.message_id === "number" ? String(msg.message_id) : undefined,
       messageThreadId: threadSpec.id,
     },
     message: {
@@ -634,11 +635,7 @@ export async function buildTelegramInboundContextPayload(
       ReplyToForwardedDate: visibleReplyTarget?.forwardedFrom?.date
         ? visibleReplyTarget.forwardedFrom.date * 1000
         : undefined,
-      ForwardedFromUsername: visibleForwardOrigin?.fromUsername,
-      ForwardedFromTitle: visibleForwardOrigin?.fromTitle,
-      ForwardedFromSignature: visibleForwardOrigin?.fromSignature,
-      ForwardedFromChatType: visibleForwardOrigin?.fromChatType,
-      ForwardedFromMessageId: visibleForwardOrigin?.fromMessageId,
+      ...projectTelegramForwardedContext(visibleForwardOrigin),
       WasMentioned: isGroup ? effectiveWasMentioned : undefined,
       Sticker: allMedia[0]?.stickerMetadata,
       StickerMediaIncluded: allMedia[0]?.stickerMetadata ? currentMediaFacts.length > 0 : undefined,

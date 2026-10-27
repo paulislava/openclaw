@@ -1385,7 +1385,7 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     expect(result).toMatchObject(compacted);
   });
 
-  it("never falls back from an explicit compaction.model", async () => {
+  it("rotates fallback models after an explicit compaction.model fails", async () => {
     sessionCompactImpl.mockRejectedValueOnce(
       Object.assign(new Error("400 invalid request body"), { status: 400 }),
     );
@@ -1402,8 +1402,11 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
       }) as never,
     });
 
-    expect(result.ok).toBe(false);
-    expect(resolveModelMock).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    expect(sessionCompactImpl).toHaveBeenCalledTimes(2);
+    expect(resolveModelMock).toHaveBeenCalledTimes(2);
+    expect(mockCallArg(resolveModelMock, 1, 0)).toBe("anthropic");
+    expect(mockCallArg(resolveModelMock, 1, 1)).toBe("claude-fallback");
     expect(mockCallArg(resolveModelMock)).toBe("azure");
     expect(mockCallArg(resolveModelMock, 0, 1)).toBe("compact-primary");
     expect(mockCallArg(resolveModelMock, 0, 2)).toBeTypeOf("string");
