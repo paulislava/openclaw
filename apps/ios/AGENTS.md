@@ -32,3 +32,9 @@
 - Daily TestFlight runs use the `ios-testflight` environment, the configured external group ID, and existing beta metadata. Submit for TestFlight beta review when required and enable automatic tester notification; preserve pending reviews and use saved-artifact recovery for partially completed distribution. See [TestFlight distribution](VERSIONING.md#testflight-distribution).
 - Do not submit an iOS App Store version for App Review. App Review submission stays manual unless the user explicitly asks to submit a specific already-prepared version after the failed state has been reported.
 - `pnpm ios:release:archive` is for local archive validation only. It is not a fallback release path after screenshot, metadata, or upload-lane failure.
+
+## Локальная сборка Siesta
+
+- Сохранять имя Siesta, существующие иконки и идентификаторы приложения, расширений и App Group из игнорируемого `.local-signing.xcconfig`.
+- Подключать локальные настройки после Debug defaults в обоих Signing.xcconfig, чтобы Debug не заменял существующие идентификаторы суффиксом `.debug`.
+- Настройки App Group приложения и виджета должны совпадать в Debug и Release. Локальную подпись не коммитить.

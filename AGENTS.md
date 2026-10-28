@@ -118,3 +118,7 @@ Update instructions at owner; no competing rules here.
 - **Releases, extended-stable:** release workflow and [release contract](docs/reference/RELEASING.md) ([line/retirement policy](docs/reference/RELEASING.md#release-channels)); preserve selected cut and identity through publication and verification.
 - **Secrets/advisories:** [secrets](docs/gateway/secrets.md), [auth](docs/auth-credential-semantics.md), [security reporting](SECURITY.md).
 - **Live channels/native apps:** scoped guide + [evidence policy](.agents/skills/openclaw-testing/SKILL.md#select-the-proof).
+
+## Эксплуатация личного форка
+
+Порядок обновления VPS, сохранения iOS Siesta и проверки миграций: [журнал обновления](ai/features/upstream-sync-20261028.md). Не публиковать локальные конфигурации и резервные копии состояния.
