@@ -2,8 +2,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import { sendLocationTelegram } from "./send-location.js";
 import { sendLegacyLocationTelegram, sendVenueTelegram } from "./send-rich.js";
 
-vi.mock("./send-location.js", () => ({ sendLocationTelegram: vi.fn() }));
-vi.mock("./send-message.js", () => ({ sendMessageTelegram: vi.fn() }));
+vi.mock("./send-location.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./send-location.js")>()),
+  sendLocationTelegram: vi.fn(),
+}));
+vi.mock("./send-message.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./send-message.js")>()),
+  sendMessageTelegram: vi.fn(),
+}));
 afterEach(() => vi.clearAllMocks());
 
 it("maps the fork's location accuracy onto the canonical pin payload", async () => {

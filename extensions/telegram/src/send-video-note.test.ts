@@ -2,7 +2,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { sendMessageTelegram } from "./send-message.js";
 import { sendVideoNoteTelegram } from "./send-rich.js";
 
-vi.mock("./send-message.js", () => ({ sendMessageTelegram: vi.fn() }));
+vi.mock("./send-message.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./send-message.js")>()),
+  sendMessageTelegram: vi.fn(),
+}));
 afterEach(() => vi.clearAllMocks());
 
 it("routes a video note through the current native send owner", async () => {

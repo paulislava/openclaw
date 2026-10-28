@@ -2256,7 +2256,6 @@
 ["src/auto-reply/reply/agent-runner-memory.tools.test.ts","../../agents/embedded-agent.js","84db64860d7e204ff9895bfd217a0807599d344018f17c08a80e355a8e4ae616",1]
 ["src/auto-reply/reply/agent-runner-node-authority.test.ts","../../agents/agent-tools.js","1c03ac56f6febb9e111895708fae096a476c0c413093c446e7dcd2ca628e7110",1]
 ["src/auto-reply/reply/agent-runner-result-accounting.test.ts","./queue.js","6440dae8f4836b8aa330fa95a2857c13f10cd2e43e00f1dea0bafdf39dffdb55",1]
-["src/auto-reply/reply/agent-runner-result-accounting.test.ts","./reply-usage-state.js","f0f1c0cf722e84c9c6ddb2efd169e579ba129f8d4078ca5485b210f78fcb5770",1]
 ["src/auto-reply/reply/agent-runner-run-params.thinking.test.ts","../../agents/model-catalog.runtime.js","ee15f81473afee06ed1992f313228301ef219a39d4e39f9893ae5b2f03718205",1]
 ["src/auto-reply/reply/agent-runner-utils.test.ts","../../channels/plugins/index.js","3446a370ab42c12565587e8731b3b017c7b98a0ec6f0c2f57726741374e08ccd",1]
 ["src/auto-reply/reply/agent-runner-utils.test.ts","../../utils/provider-utils.js","7c6ce89e490aaadece65a085648c3a09416b1c066e2468460223016439a06841",1]

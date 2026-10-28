@@ -9,7 +9,8 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ current: true }));
-vi.mock("./http-auth-utils.js", () => ({
+vi.mock("./http-auth-utils.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./http-auth-utils.js")>()),
   authorizeGatewayHttpRequestOrReply: async ({
     req,
     res,
@@ -31,7 +32,8 @@ vi.mock("./http-auth-utils.js", () => ({
     };
   },
 }));
-vi.mock("./http-request-authority.js", () => ({
+vi.mock("./http-request-authority.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./http-request-authority.js")>()),
   finishGatewayHttpAuthorityError: (_res: unknown, error: unknown) =>
     error instanceof Error && error.message === "authority expired",
 }));

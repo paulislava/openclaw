@@ -17,7 +17,8 @@ vi.mock("./queue.js", () => ({
   refreshQueuedFollowupSession: (...args: unknown[]) => mocks.refreshQueuedFollowupSession(...args),
 }));
 
-vi.mock("./reply-usage-state.js", () => ({
+vi.mock("./reply-usage-state.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./reply-usage-state.js")>()),
   buildReplyUsageState: () => ({}),
   recordReplyUsageState: vi.fn(),
   resolveReplyProviderUsageWindows: async () => undefined,
